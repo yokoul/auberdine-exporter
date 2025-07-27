@@ -1,6 +1,82 @@
 -- AuberdineExporter - Main addon file
 print("=== AuberdineExporter loading ===")
 
+-- Global addon table
+AuberdineExporter = AuberdineExporter or {}
+
+-- Function to reset all data
+function AuberdineExporter:ResetAllData()
+    if not AuberdineExporterDB or type(AuberdineExporterDB) ~= "table" then
+        AuberdineExporterDB = {}
+    end
+    AuberdineExporterDB.characters = {}
+    print("|cff00ff00AuberdineExporter:|r All data has been reset!")
+end
+
+-- Function to clear memory data (selective cleanup)
+function AuberdineExporter:ClearMemoryData()
+    if not AuberdineExporterDB or not AuberdineExporterDB.characters then
+        print("|cffff0000AuberdineExporter:|r No data to clear!")
+        return
+    end
+    
+    local currentPlayerKey = UnitName("player") .. "-" .. GetRealmName()
+    local clearedCount = 0
+    local keptCount = 0
+    
+    -- Keep only current character's data
+    local currentCharData = AuberdineExporterDB.characters[currentPlayerKey]
+    
+    for charKey, _ in pairs(AuberdineExporterDB.characters) do
+        if charKey ~= currentPlayerKey then
+            AuberdineExporterDB.characters[charKey] = nil
+            clearedCount = clearedCount + 1
+        else
+            keptCount = keptCount + 1
+        end
+    end
+    
+    if clearedCount > 0 then
+        print(string.format("|cff00ff00AuberdineExporter:|r Cleared data for %d characters. Kept current character data (%d).", 
+            clearedCount, keptCount))
+    else
+        print("|cff00ff00AuberdineExporter:|r No additional character data found to clear.")
+    end
+end
+
+-- Function to get data size information
+function AuberdineExporter:GetDataSizeInfo()
+    if not AuberdineExporterDB or not AuberdineExporterDB.characters then
+        return 0, 0, {}
+    end
+    
+    local totalChars = 0
+    local totalSize = 0
+    local charSizes = {}
+    
+    for charKey, charData in pairs(AuberdineExporterDB.characters) do
+        totalChars = totalChars + 1
+        
+        -- Estimate data size (rough calculation)
+        local charDataStr = ""
+        if charData.professions then
+            for profName, profData in pairs(charData.professions) do
+                if profData.recipes then
+                    for recipeId, _ in pairs(profData.recipes) do
+                        charDataStr = charDataStr .. tostring(recipeId)
+                    end
+                end
+            end
+        end
+        
+        local estimatedSize = string.len(charDataStr) + 100 -- Base character info
+        charSizes[charKey] = estimatedSize
+        totalSize = totalSize + estimatedSize
+    end
+    
+    return totalChars, totalSize, charSizes
+end
+
 -- Load LibRecipes-3.0
 local LibRecipes = LibStub("LibRecipes-3.0", true) or LibStub("LibRecipes-1.0a", true)
 
@@ -1534,80 +1610,6 @@ local function HandleSlashCommand(msg)
     else
         print("|cffff0000AuberdineExporter:|r Unknown command '" .. command .. "'. Use /auberdine help")
     end
-end
-
--- Main slash commands
--- Function to reset all data
-function AuberdineExporter:ResetAllData()
-    if not AuberdineExporterDB or type(AuberdineExporterDB) ~= "table" then
-        AuberdineExporterDB = {}
-    end
-    AuberdineExporterDB.characters = {}
-    print("|cff00ff00AuberdineExporter:|r All data has been reset!")
-end
-
--- Function to clear memory data (selective cleanup)
-function AuberdineExporter:ClearMemoryData()
-    if not AuberdineExporterDB or not AuberdineExporterDB.characters then
-        print("|cffff0000AuberdineExporter:|r No data to clear!")
-        return
-    end
-    
-    local currentPlayerKey = UnitName("player") .. "-" .. GetRealmName()
-    local clearedCount = 0
-    local keptCount = 0
-    
-    -- Keep only current character's data
-    local currentCharData = AuberdineExporterDB.characters[currentPlayerKey]
-    
-    for charKey, _ in pairs(AuberdineExporterDB.characters) do
-        if charKey ~= currentPlayerKey then
-            AuberdineExporterDB.characters[charKey] = nil
-            clearedCount = clearedCount + 1
-        else
-            keptCount = keptCount + 1
-        end
-    end
-    
-    if clearedCount > 0 then
-        print(string.format("|cff00ff00AuberdineExporter:|r Cleared data for %d characters. Kept current character data (%d).", 
-            clearedCount, keptCount))
-    else
-        print("|cff00ff00AuberdineExporter:|r No additional character data found to clear.")
-    end
-end
-
--- Function to get data size information
-function AuberdineExporter:GetDataSizeInfo()
-    if not AuberdineExporterDB or not AuberdineExporterDB.characters then
-        return 0, 0, {}
-    end
-    
-    local totalChars = 0
-    local totalSize = 0
-    local charSizes = {}
-    
-    for charKey, charData in pairs(AuberdineExporterDB.characters) do
-        totalChars = totalChars + 1
-        
-        -- Estimate data size (rough calculation)
-        local charDataStr = ""
-        if charData.professions then
-            for profName, profData in pairs(charData.professions) do
-                if profData.recipes then
-                    for recipeId, _ in pairs(profData.recipes) do
-                        charDataStr = charDataStr .. tostring(recipeId)
-                    end
-                end
-            end
-        end
-        
-        local estimatedSize = string.len(charDataStr) + 100 -- Base character info
-        charSizes[charKey] = estimatedSize
-        totalSize = totalSize + estimatedSize
-    end
-    
-    return totalChars, totalSize, charSizes
 end
 
 SLASH_AUBERDINE1 = "/auberdine"
