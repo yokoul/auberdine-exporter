@@ -1,0 +1,29 @@
+{
+  "dataBase64": "eyJjaGFyYWN0ZXJzIjp7IkRvb21pYS1BdWJlcmRpbmUiOnsiaW5mbyI6eyJjbGFzcyI6IkTDqW1vbmlzdGUiLCJndWlkIjoiUGxheWVyLTUyNDEtMDExRTIzMzMiLCJsYXN0VXBkYXRlIjoxNzUzNjMyMjY5LCJsZXZlbCI6MzUsImxvY2FsZSI6ImZyRlIiLCJuYW1lIjoiRG9vbWlhIiwicmFjZSI6Ikdub21lIiwicmVhbG0iOiJBdWJlcmRpbmUifX19fQ==",
+  "metadata": {
+    "addon": "AuberdineExporter",
+    "challenge": "auberdine-2025-recipe-export",
+    "clientBuild": "61582",
+    "clientKey": "auberdine-v1",
+    "exportDate": "2025-07-27 18:04:35",
+    "locale": "frFR",
+    "nonce": "1753632275_7200_011E2333",
+    "realmlist": "unknown",
+    "timestamp": 1753632275,
+    "version": "1.3.0"
+  },
+  "signature": "69ecbe7214f39518",
+  "signatureInfo": {
+    "algorithm": "multi-pass-md5-base64",
+    "hasChallenge": true,
+    "nonce": "1753632275_7200_011E2333",
+    "timestamp": 1753632275
+  },
+  "validation": {
+    "dataChecksum": "3a1dd05ef0e1ece",
+    "encoding": "base64",
+    "exportComplete": true,
+    "missingAPIs": {},
+    "warnings": {}
+  }
+}
