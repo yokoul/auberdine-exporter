@@ -1,18 +1,18 @@
--- Main UI for RecipesExtractor
-RecipesExtractorUI = {}
+-- Main UI for AuberdineExporter
+AuberdineExporterUI = {}
 
-function RecipesExtractorUI:Initialize()
+function AuberdineExporterUI:Initialize()
     self.mainFrame = nil
     self.isInitialized = true
 end
 
-function RecipesExtractorUI:CreateMainFrame()
+function AuberdineExporterUI:CreateMainFrame()
     if self.mainFrame then
         return self.mainFrame
     end
     
     -- Create main frame
-    local frame = CreateFrame("Frame", "RecipesExtractorMainFrame", UIParent)
+    local frame = CreateFrame("Frame", "AuberdineExporterMainFrame", UIParent)
     frame:SetSize(600, 500)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
@@ -42,11 +42,11 @@ function RecipesExtractorUI:CreateMainFrame()
     frame.icon = frame:CreateTexture(nil, "OVERLAY")
     frame.icon:SetSize(16, 16)
     frame.icon:SetPoint("TOPLEFT", 10, -7)
-    frame.icon:SetTexture("Interface\\AddOns\\RecipesExtractor\\UI\\Icons\\rc32.png")
+    frame.icon:SetTexture("Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab32.png")
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)  -- Adjusted for icon
-    frame.title:SetText("Recipes Extractor")
+    frame.title:SetText("Auberdine Exporter")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -54,18 +54,134 @@ function RecipesExtractorUI:CreateMainFrame()
     frame.closeBtn:SetPoint("TOPRIGHT", -5, -5)
     frame.closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
-    -- Content area
-    frame.content = CreateFrame("Frame", nil, frame)
-    frame.content:SetPoint("TOPLEFT", 10, -35)
-    frame.content:SetPoint("BOTTOMRIGHT", -10, 40)
+    -- Export button
+    local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    exportBtn:SetPoint("TOPLEFT", 50, -50)
+    exportBtn:SetSize(140, 25)
+    exportBtn:SetText("Exporter Données")
+    exportBtn:SetScript("OnClick", function()
+        if ExportToJSON then
+            local jsonData = ExportToJSON()
+            if CreateExportFrame then
+                CreateExportFrame(jsonData, "JSON")
+            else
+                print("|cff00ff00AuberdineExporter:|r Données d'export générées ! Utilisez /auberdine export pour les voir.")
+            end
+        end
+    end)
     
-    self:CreateMainFrameContent(frame.content)
+    -- Clear Data button
+    local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    clearBtn:SetPoint("TOPLEFT", 210, -50)
+    clearBtn:SetSize(140, 25)
+    clearBtn:SetText("Vider Mémoire")
+    clearBtn:SetScript("OnClick", function()
+        StaticPopup_Show("AUBERDINE_EXPORTER_CLEAR_CONFIRM")
+    end)
+    
+    -- Reset button
+    local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    resetBtn:SetPoint("TOPLEFT", 370, -50)
+    resetBtn:SetSize(140, 25)
+    resetBtn:SetText("Tout Supprimer")
+    resetBtn:SetScript("OnClick", function()
+        StaticPopup_Show("AUBERDINE_EXPORTER_RESET_CONFIRM")
+    end)
+    
+    -- Content area
+    frame.content = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    frame.content:SetPoint("TOPLEFT", 10, -85)
+    frame.content:SetPoint("BOTTOMRIGHT", -30, 10)
+    
+    -- Background icon for content area
+    frame.contentBg = frame.content:CreateTexture(nil, "BACKGROUND")
+    frame.contentBg:SetSize(256, 256)
+    frame.contentBg:SetPoint("CENTER", frame.content, "CENTER", 0, 0)
+    frame.contentBg:SetTexture("Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab256.png")
+    frame.contentBg:SetAlpha(0.1) -- Semi-transparent pour ne pas gêner la lecture
+    frame.contentBg:SetDesaturated(true) -- Désaturé pour être plus discret
+    
+    -- Text content
+    frame.textContent = CreateFrame("EditBox", nil, frame.content)
+    frame.textContent:SetMultiLine(true)
+    frame.textContent:SetFontObject("GameFontNormal")
+    frame.textContent:SetWidth(550)
+    frame.textContent:SetAutoFocus(false)
+    frame.textContent:EnableMouse(false)
+    frame.content:SetScrollChild(frame.textContent)
+    
+    -- Update content function
+    frame.UpdateContent = function()
+        if GetStatistics and AuberdineExporterDB then
+            local stats = GetStatistics()
+            local text = string.format([[
+Auberdine Exporter - Statistiques
+
+Personnages: %d
+Métiers: %d  
+Total Recettes: %d
+
+Personnage Actuel: %s (%s)
+
+Instructions:
+1. Ouvrez les fenêtres de métiers pour scanner automatiquement les recettes
+2. Utilisez "Exporter Données" pour générer un export pour auberdine.eu
+3. Utilisez "Vider Mémoire" pour réduire la taille du fichier (garde le personnage actuel)
+4. Utilisez "Tout Supprimer" pour effacer toutes les données
+
+Commandes:
+• /auberdine - Ouvrir cette interface
+• /auberdine scan - Scan manuel de tous les métiers
+• /auberdine clear - Vider les données mémoire
+• /auberdine size - Afficher la taille des données
+• /auberdine help - Afficher toutes les commandes
+]], 
+                stats.totalCharacters, 
+                stats.totalProfessions, 
+                stats.totalRecipes,
+                UnitName("player") or "Unknown",
+                GetRealmName() or "Unknown"
+            )
+            
+            if stats.totalCharacters > 0 then
+                text = text .. "\n\nDétails par personnage:\n"
+                for charKey, charData in pairs(AuberdineExporterDB.characters or {}) do
+                    local charProfs = 0
+                    local charRecipes = 0
+                    if charData.professions then
+                        for _, profData in pairs(charData.professions) do
+                            charProfs = charProfs + 1
+                            if profData.recipes then
+                                for _ in pairs(profData.recipes) do charRecipes = charRecipes + 1 end
+                            end
+                        end
+                    end
+                    text = text .. string.format("• %s: %d métiers, %d recettes\n", 
+                        charData.name or charKey, charProfs, charRecipes)
+                end
+            end
+            
+            frame.textContent:SetText(text)
+        else
+            frame.textContent:SetText("AuberdineExporter - Chargement...")
+        end
+    end
     
     self.mainFrame = frame
     return frame
 end
 
-function RecipesExtractorUI:CreateMainFrameContent(parent)
+function AuberdineExporterUI:ToggleMainFrame()
+    local frame = self:CreateMainFrame()
+    if frame:IsShown() then
+        frame:Hide()
+    else
+        frame.UpdateContent()
+        frame:Show()
+    end
+end
+
+function AuberdineExporterUI:CreateMainFrameContent(parent)
     -- Tab buttons
     local tabHeight = 25
     local tabButtons = {}
@@ -103,7 +219,7 @@ function RecipesExtractorUI:CreateMainFrameContent(parent)
     self:ShowTab("CreateOverviewTab", tabButtons, 1)
 end
 
-function RecipesExtractorUI:ShowTab(tabFunction, tabButtons, activeTab)
+function AuberdineExporterUI:ShowTab(tabFunction, tabButtons, activeTab)
     local content = self.mainFrame.content.tabContent
     
     -- Clear current content
@@ -127,11 +243,11 @@ function RecipesExtractorUI:ShowTab(tabFunction, tabButtons, activeTab)
     end
 end
 
-function RecipesExtractorUI:CreateOverviewTab(parent)
+function AuberdineExporterUI:CreateOverviewTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints()
     
-    local stats = RecipesExtractorDataManager:GetStatistics()
+    local stats = GetStatistics and GetStatistics() or {totalCharacters = 0, totalProfessions = 0, totalRecipes = 0}
     
     -- Statistics display
     local yOffset = -10
@@ -234,7 +350,7 @@ function RecipesExtractorUI:CreateOverviewTab(parent)
     return frame
 end
 
-function RecipesExtractorUI:CreateCharactersTab(parent)
+function AuberdineExporterUI:CreateCharactersTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints()
     
@@ -247,12 +363,12 @@ function RecipesExtractorUI:CreateCharactersTab(parent)
     scrollFrame:SetScrollChild(content)
     content:SetWidth(scrollFrame:GetWidth())
     
-    local allRecipes = RecipesExtractorDatabase:GetAllRecipes()
+    local allRecipes = AuberdineExporterDB and AuberdineExporterDB.characters or {}
     local yOffset = 0
     local rowHeight = 80
     
     for charKey, characterData in pairs(allRecipes) do
-        local char = characterData.character
+        local char = characterData
         
         -- Character frame
         local charFrame = CreateFrame("Frame", nil, content)
@@ -284,10 +400,10 @@ function RecipesExtractorUI:CreateCharactersTab(parent)
         -- Professions info
         local profText = ""
         local profCount = 0
-        for profName, profData in pairs(characterData.professions) do
+        for profName, profData in pairs(characterData.professions or {}) do
             profCount = profCount + 1
             local recipeCount = 0
-            for _ in pairs(profData.recipes) do
+            for _ in pairs(profData.recipes or {}) do
                 recipeCount = recipeCount + 1
             end
             
@@ -295,7 +411,7 @@ function RecipesExtractorUI:CreateCharactersTab(parent)
                 profText = profText .. ", "
             end
             profText = profText .. string.format("%s (%d/%d, %d recipes)", 
-                profName, profData.level, profData.maxLevel, recipeCount)
+                profName, profData.level or 0, profData.maxLevel or 0, recipeCount)
         end
         
         if profCount > 0 then
@@ -315,7 +431,7 @@ function RecipesExtractorUI:CreateCharactersTab(parent)
     return frame
 end
 
-function RecipesExtractorUI:CreateExportTab(parent)
+function AuberdineExporterUI:CreateExportTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints()
     
@@ -373,11 +489,15 @@ function RecipesExtractorUI:CreateExportTab(parent)
     return frame
 end
 
-function RecipesExtractorUI:CreateSettingsTab(parent)
+function AuberdineExporterUI:CreateSettingsTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints()
     
-    local settings = RecipesExtractorDatabase:GetSettings()
+    local settings = AuberdineExporterDB and AuberdineExporterDB.settings or {
+        autoScan = true,
+        shareData = true,
+        minimapButtonHidden = false
+    }
     local yOffset = -10
     
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -392,7 +512,9 @@ function RecipesExtractorUI:CreateSettingsTab(parent)
     autoScanCheck:SetChecked(settings.autoScan)
     autoScanCheck.text:SetText("Auto-scan professions when opened")
     autoScanCheck:SetScript("OnClick", function(self)
-        RecipesExtractorDatabase:SetSetting("autoScan", self:GetChecked())
+        if AuberdineExporterDB and AuberdineExporterDB.settings then
+            AuberdineExporterDB.settings.autoScan = self:GetChecked()
+        end
     end)
     
     yOffset = yOffset - 30
@@ -403,7 +525,9 @@ function RecipesExtractorUI:CreateSettingsTab(parent)
     shareDataCheck:SetChecked(settings.shareData)
     shareDataCheck.text:SetText("Share data between characters")
     shareDataCheck:SetScript("OnClick", function(self)
-        RecipesExtractorDatabase:SetSetting("shareData", self:GetChecked())
+        if AuberdineExporterDB and AuberdineExporterDB.settings then
+            AuberdineExporterDB.settings.shareData = self:GetChecked()
+        end
     end)
     
     yOffset = yOffset - 30
@@ -415,8 +539,12 @@ function RecipesExtractorUI:CreateSettingsTab(parent)
     minimapCheck.text:SetText("Show minimap button")
     minimapCheck:SetScript("OnClick", function(self)
         local show = self:GetChecked()
-        RecipesExtractorDatabase:SetSetting("minimapButtonHidden", not show)
-        RecipesExtractorMinimapButton:SetVisibility(show)
+        if AuberdineExporterDB and AuberdineExporterDB.settings then
+            AuberdineExporterDB.settings.minimapButtonHidden = not show
+        end
+        if AuberdineMinimapButton and AuberdineMinimapButton.SetVisibility then
+            AuberdineMinimapButton:SetVisibility(show)
+        end
     end)
     
     yOffset = yOffset - 50
@@ -468,32 +596,35 @@ function RecipesExtractorUI:CreateSettingsTab(parent)
     resetMinimapBtn:SetSize(180, 25)
     resetMinimapBtn:SetText("Reset Minimap Position")
     resetMinimapBtn:SetScript("OnClick", function()
-        RecipesExtractorMinimapButton:SetPosition(0)
-        RecipesExtractorMinimapButton:SavePosition()
-        print("|cff00ff00RecipesExtractor:|r Minimap button position reset.")
+        if AuberdineMinimapButton and AuberdineMinimapButton.SetPosition then
+            AuberdineMinimapButton:SetPosition(0)
+            AuberdineMinimapButton:SavePosition()
+            print("|cff00ff00AuberdineExporter:|r Position du bouton minimap réinitialisée.")
+        end
     end)
     
     return frame
 end
 
-function RecipesExtractorUI:ToggleMainFrame()
+function AuberdineExporterUI:ToggleMainFrame()
     local frame = self:CreateMainFrame()
     if frame:IsShown() then
         frame:Hide()
     else
+        frame.UpdateContent()
         frame:Show()
     end
 end
 
-function RecipesExtractorUI:ShowExportFrame(exportType)
-    RecipesExtractorExportUI:ShowExportFrame(exportType)
+function AuberdineExporterUI:ShowExportFrame(exportType)
+    AuberdineExportUI:ShowExportFrame(exportType)
 end
 
 -- Static popup for reset confirmation
 StaticPopupDialogs["AUBERDINE_EXPORTER_RESET_CONFIRM"] = {
-    text = "Are you sure you want to reset all AuberdineExporter data? This cannot be undone!",
-    button1 = "Yes",
-    button2 = "No",
+    text = "Êtes-vous sûr de vouloir réinitialiser toutes les données AuberdineExporter ? Cette action ne peut pas être annulée !",
+    button1 = "Oui",
+    button2 = "Non",
     OnAccept = function()
         if AuberdineExporter and AuberdineExporter.ResetAllData then
             AuberdineExporter:ResetAllData()
@@ -503,7 +634,7 @@ StaticPopupDialogs["AUBERDINE_EXPORTER_RESET_CONFIRM"] = {
                 AuberdineExporterDB = {}
             end
             AuberdineExporterDB.characters = {}
-            print("|cff00ff00AuberdineExporter:|r All data has been reset!")
+            print("|cff00ff00AuberdineExporter:|r Toutes les données ont été réinitialisées !")
         end
     end,
     timeout = 0,
@@ -514,14 +645,14 @@ StaticPopupDialogs["AUBERDINE_EXPORTER_RESET_CONFIRM"] = {
 
 -- Static popup for clear memory confirmation
 StaticPopupDialogs["AUBERDINE_EXPORTER_CLEAR_CONFIRM"] = {
-    text = "Clear memory data to reduce export payload size?\n\nThis will remove character data from older sessions but keep current character data.",
-    button1 = "Clear",
-    button2 = "Cancel",
+    text = "Vider les données mémoire pour réduire la taille de l'export ?\n\nCeci supprimera les données des anciennes sessions mais gardera les données du personnage actuel.",
+    button1 = "Vider",
+    button2 = "Annuler",
     OnAccept = function()
         if AuberdineExporter and AuberdineExporter.ClearMemoryData then
             AuberdineExporter:ClearMemoryData()
         else
-            print("|cffff0000AuberdineExporter:|r Clear function not available!")
+            print("|cffff0000AuberdineExporter:|r Fonction de vidage non disponible !")
         end
     end,
     timeout = 0,

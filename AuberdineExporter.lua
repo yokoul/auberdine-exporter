@@ -278,10 +278,10 @@ local function CreateMinimapButton()
     
     -- Try multiple paths for your custom icon
     local iconPaths = {
-        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab32",
-        "Interface/AddOns/AuberdineExporter/UI/Icons/ab32",
-        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab32.png",
-        "Interface/AddOns/AuberdineExporter/UI/Icons/ab32.png"
+        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64",
+        "Interface/AddOns/AuberdineExporter/UI/Icons/ab64",
+        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64.png",
+        "Interface/AddOns/AuberdineExporter/UI/Icons/ab64.png"
     }
     
     local iconLoaded = false
@@ -1081,12 +1081,17 @@ local function CreateMainFrame()
 end
 
 ToggleMainFrame = function()
-    local frame = CreateMainFrame()
-    if frame:IsShown() then
-        frame:Hide()
+    if AuberdineExporterUI and AuberdineExporterUI.ToggleMainFrame then
+        AuberdineExporterUI:ToggleMainFrame()
     else
-        frame:UpdateContent()
-        frame:Show()
+        -- Fallback: use the built-in simple frame
+        local frame = CreateMainFrame()
+        if frame:IsShown() then
+            frame:Hide()
+        else
+            frame.UpdateContent()
+            frame:Show()
+        end
     end
 end
 

@@ -1,14 +1,14 @@
--- Export UI for RecipesExtractor
-RecipesExtractorExportUI = {}
+-- Export UI for AuberdineExporter
+AuberdineExportUI = {}
 
-function RecipesExtractorExportUI:ShowExportFrame(exportType)
+function AuberdineExportUI:ShowExportFrame(exportType)
     if self.exportFrame then
         self.exportFrame:Hide()
         self.exportFrame = nil
     end
     
     -- Create export frame
-    local frame = CreateFrame("Frame", "RecipesExtractorExportFrame", UIParent)
+    local frame = CreateFrame("Frame", "AuberdineExportFrame", UIParent)
     frame:SetSize(700, 600)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
@@ -37,11 +37,11 @@ function RecipesExtractorExportUI:ShowExportFrame(exportType)
     frame.icon = frame:CreateTexture(nil, "OVERLAY")
     frame.icon:SetSize(16, 16)
     frame.icon:SetPoint("TOPLEFT", 10, -7)
-    frame.icon:SetTexture("Interface\\AddOns\\RecipesExtractor\\UI\\Icons\\rc32.png")
+    frame.icon:SetTexture("Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab32.png")
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)  -- Adjusted for icon
-    frame.title:SetText("Export Data - " .. string.upper(exportType))
+    frame.title:SetText("Export Données - " .. string.upper(exportType))
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -55,14 +55,14 @@ function RecipesExtractorExportUI:ShowExportFrame(exportType)
     -- Info text
     local infoText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     infoText:SetPoint("TOPLEFT", 15, -40)
-    infoText:SetText("Select all text below and copy it (Ctrl+C):")
+    infoText:SetText("Sélectionnez tout le texte ci-dessous et copiez-le (Ctrl+C) :")
     infoText:SetTextColor(1, 1, 0)
     
     -- Copy All button
     local copyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     copyBtn:SetPoint("TOPRIGHT", -15, -35)
     copyBtn:SetSize(100, 25)
-    copyBtn:SetText("Select All")
+    copyBtn:SetText("Tout Sélectionner")
     copyBtn:SetScript("OnClick", function()
         frame.scrollFrame.editBox:SetFocus()
         frame.scrollFrame.editBox:HighlightText()
@@ -103,11 +103,11 @@ function RecipesExtractorExportUI:ShowExportFrame(exportType)
     instructions:SetTextColor(0.8, 0.8, 0.8)
     
     if exportType == "web" then
-        instructions:SetText("This format is optimized for web integration. Copy the text and paste it on your website.")
+        instructions:SetText("Ce format est optimisé pour l'intégration web. Copiez le texte et collez-le sur votre site web.")
     elseif exportType == "csv" then
-        instructions:SetText("This CSV format can be imported into Excel, Google Sheets, or other spreadsheet applications.")
+        instructions:SetText("Ce format CSV peut être importé dans Excel, Google Sheets, ou d'autres applications de tableur.")
     else
-        instructions:SetText("This JSON format contains all recipe data and can be processed by external tools.")
+        instructions:SetText("Ce format JSON contient toutes les données de recettes et peut être traité par des outils externes.")
     end
     
     self.exportFrame = frame
@@ -120,14 +120,14 @@ function RecipesExtractorExportUI:ShowExportFrame(exportType)
     end)
 end
 
-function RecipesExtractorExportUI:GenerateExportData(exportType)
+function AuberdineExportUI:GenerateExportData(exportType)
     if exportType == "json" then
-        return RecipesExtractorDataManager:GenerateJSONExport()
+        return ExportToJSON and ExportToJSON() or "Fonction d'export non disponible"
     elseif exportType == "csv" then
-        return RecipesExtractorDataManager:GenerateCSVExport()
+        return ExportToCSV and ExportToCSV() or "Fonction d'export CSV non disponible"
     elseif exportType == "web" then
-        return RecipesExtractorDataManager:GenerateWebExport()
+        return ExportToSimpleJSON and ExportToSimpleJSON() or "Fonction d'export web non disponible"
     else
-        return "Unknown export type: " .. tostring(exportType)
+        return "Type d'export inconnu: " .. tostring(exportType)
     end
 end

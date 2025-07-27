@@ -1,18 +1,18 @@
--- Minimap button for RecipesExtractor
-RecipesExtractorMinimapButton = {}
+-- Minimap button for AuberdineExporter
+AuberdineMinimapButton = {}
 
-function RecipesExtractorMinimapButton:Initialize()
+function AuberdineMinimapButton:Initialize()
     self:CreateButton()
     self:LoadPosition()
 end
 
-function RecipesExtractorMinimapButton:CreateButton()
+function AuberdineMinimapButton:CreateButton()
     if self.button then
         return self.button
     end
     
     -- Create the minimap button
-    local button = CreateFrame("Button", "RecipesExtractorMinimapButton", Minimap)
+    local button = CreateFrame("Button", "AuberdineMinimapButton", Minimap)
     button:SetSize(32, 32)
     button:SetFrameStrata("MEDIUM")
     button:SetFrameLevel(8)
@@ -22,7 +22,7 @@ function RecipesExtractorMinimapButton:CreateButton()
     button.icon = button:CreateTexture(nil, "BACKGROUND")
     button.icon:SetSize(20, 20)
     button.icon:SetPoint("CENTER", 0, 1)
-    button.icon:SetTexture("Interface\\AddOns\\RecipesExtractor\\UI\\Icons\\rc32.png")
+    button.icon:SetTexture("Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64.png")
     
     -- Border texture
     button.border = button:CreateTexture(nil, "OVERLAY")
@@ -40,26 +40,26 @@ function RecipesExtractorMinimapButton:CreateButton()
     
     button:SetScript("OnClick", function(self, clickType)
         if clickType == "LeftButton" then
-            RecipesExtractorUI:ToggleMainFrame()
+            ToggleMainFrame()
         elseif clickType == "RightButton" then
-            RecipesExtractorMinimapButton:ShowContextMenu()
+            AuberdineMinimapButton:ShowContextMenu()
         end
     end)
     
     -- Drag functionality
     button:SetScript("OnDragStart", function(self)
-        self:SetScript("OnUpdate", RecipesExtractorMinimapButton.OnUpdate)
+        self:SetScript("OnUpdate", AuberdineMinimapButton.OnUpdate)
     end)
     
     button:SetScript("OnDragStop", function(self)
         self:SetScript("OnUpdate", nil)
-        RecipesExtractorMinimapButton:SavePosition()
+        AuberdineMinimapButton:SavePosition()
     end)
     
     -- Tooltip
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:SetText("Recipes Extractor", 1, 1, 1)
+        GameTooltip:SetText("Auberdine Exporter", 1, 1, 1)
         GameTooltip:AddLine("Clic gauche : Ouvrir l'interface", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Clic droit : Menu contextuel", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Glisser : Déplacer l'icône", 0.8, 0.8, 0.8)
@@ -77,7 +77,7 @@ function RecipesExtractorMinimapButton:CreateButton()
     return button
 end
 
-function RecipesExtractorMinimapButton.OnUpdate(self)
+function AuberdineMinimapButton.OnUpdate(self)
     local mx, my = Minimap:GetCenter()
     local px, py = GetCursorPosition()
     local scale = UIParent:GetEffectiveScale()
@@ -94,10 +94,10 @@ function RecipesExtractorMinimapButton.OnUpdate(self)
     self:SetPoint("CENTER", Minimap, "CENTER", x, y)
     
     -- Store angle for saving
-    RecipesExtractorMinimapButton.angle = angle
+    AuberdineMinimapButton.angle = angle
 end
 
-function RecipesExtractorMinimapButton:SetPosition(angle)
+function AuberdineMinimapButton:SetPosition(angle)
     if not self.button then return end
     
     self.angle = angle or self.angle or 0
@@ -109,24 +109,24 @@ function RecipesExtractorMinimapButton:SetPosition(angle)
     self.button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
-function RecipesExtractorMinimapButton:SavePosition()
-    if not RecipesExtractorDB then return end
+function AuberdineMinimapButton:SavePosition()
+    if not AuberdineExporterDB then return end
     
-    if not RecipesExtractorDB.settings then
-        RecipesExtractorDB.settings = {}
+    if not AuberdineExporterDB.settings then
+        AuberdineExporterDB.settings = {}
     end
     
-    RecipesExtractorDB.settings.minimapButtonAngle = self.angle or 0
+    AuberdineExporterDB.settings.minimapButtonAngle = self.angle or 0
 end
 
-function RecipesExtractorMinimapButton:LoadPosition()
-    if not RecipesExtractorDB or not RecipesExtractorDB.settings then return end
+function AuberdineMinimapButton:LoadPosition()
+    if not AuberdineExporterDB or not AuberdineExporterDB.settings then return end
     
-    local angle = RecipesExtractorDB.settings.minimapButtonAngle or 0
+    local angle = AuberdineExporterDB.settings.minimapButtonAngle or 0
     self:SetPosition(angle)
 end
 
-function RecipesExtractorMinimapButton:ShowContextMenu()
+function AuberdineMinimapButton:ShowContextMenu()
     if not self.contextMenu then
         self:CreateContextMenu()
     end
@@ -134,8 +134,8 @@ function RecipesExtractorMinimapButton:ShowContextMenu()
     ToggleDropDownMenu(1, nil, self.contextMenu, self.button, 0, 0)
 end
 
-function RecipesExtractorMinimapButton:CreateContextMenu()
-    local menu = CreateFrame("Frame", "RecipesExtractorMinimapContextMenu", UIParent, "UIDropDownMenuTemplate")
+function AuberdineMinimapButton:CreateContextMenu()
+    local menu = CreateFrame("Frame", "AuberdineMinimapContextMenu", UIParent, "UIDropDownMenuTemplate")
     
     UIDropDownMenu_Initialize(menu, function(self, level)
         local info = UIDropDownMenu_CreateInfo()
@@ -143,7 +143,7 @@ function RecipesExtractorMinimapButton:CreateContextMenu()
         -- Interface principale
         info.text = "Ouvrir l'interface"
         info.func = function()
-            RecipesExtractorUI:ToggleMainFrame()
+            ToggleMainFrame()
         end
         info.icon = "Interface\\Icons\\INV_Misc_Book_09"
         UIDropDownMenu_AddButton(info)
@@ -151,7 +151,9 @@ function RecipesExtractorMinimapButton:CreateContextMenu()
         -- Scan rapide
         info.text = "Scanner les métiers"
         info.func = function()
-            RecipesExtractorDataCollector:ScanAllProfessions()
+            if ScanAllProfessions then
+                ScanAllProfessions()
+            end
         end
         info.icon = "Interface\\Icons\\INV_Misc_Eye_02"
         UIDropDownMenu_AddButton(info)
@@ -159,7 +161,7 @@ function RecipesExtractorMinimapButton:CreateContextMenu()
         -- Export rapide
         info.text = "Export web"
         info.func = function()
-            RecipesExtractorUI:ShowExportFrame("web")
+            AuberdineExportUI:ShowExportFrame("web")
         end
         info.icon = "Interface\\Icons\\INV_Misc_Note_01"
         UIDropDownMenu_AddButton(info)
@@ -176,7 +178,7 @@ function RecipesExtractorMinimapButton:CreateContextMenu()
         info.text = "Masquer le bouton minimap"
         info.disabled = false
         info.func = function()
-            RecipesExtractorMinimapButton:ToggleVisibility()
+            AuberdineMinimapButton:ToggleVisibility()
         end
         info.icon = "Interface\\Icons\\INV_Misc_Eye_01"
         UIDropDownMenu_AddButton(info)
@@ -184,8 +186,8 @@ function RecipesExtractorMinimapButton:CreateContextMenu()
         -- Réinitialiser position
         info.text = "Réinitialiser la position"
         info.func = function()
-            RecipesExtractorMinimapButton:SetPosition(0)
-            RecipesExtractorMinimapButton:SavePosition()
+            AuberdineMinimapButton:SetPosition(0)
+            AuberdineMinimapButton:SavePosition()
         end
         info.icon = "Interface\\Icons\\Ability_Spy"
         UIDropDownMenu_AddButton(info)
@@ -193,11 +195,11 @@ function RecipesExtractorMinimapButton:CreateContextMenu()
         -- Aide
         info.text = "Aide"
         info.func = function()
-            print("|cff00ff00RecipesExtractor Aide:|r")
+            print("|cff00ff00AuberdineExporter Aide:|r")
             print("  Clic gauche : Ouvrir l'interface")
             print("  Clic droit : Menu contextuel")
             print("  Glisser : Déplacer l'icône")
-            print("  /recipes help : Aide complète")
+            print("  /auberdine help : Aide complète")
         end
         info.icon = "Interface\\Icons\\INV_Misc_QuestionMark"
         UIDropDownMenu_AddButton(info)
@@ -207,61 +209,61 @@ function RecipesExtractorMinimapButton:CreateContextMenu()
     self.contextMenu = menu
 end
 
-function RecipesExtractorMinimapButton:ToggleVisibility()
+function AuberdineMinimapButton:ToggleVisibility()
     if not self.button then return end
     
     if self.button:IsShown() then
         self.button:Hide()
-        if not RecipesExtractorDB.settings then
-            RecipesExtractorDB.settings = {}
+        if not AuberdineExporterDB.settings then
+            AuberdineExporterDB.settings = {}
         end
-        RecipesExtractorDB.settings.minimapButtonHidden = true
-        print("|cff00ff00RecipesExtractor:|r Bouton minimap masqué. Utilisez '/recipes minimap show' pour le réafficher.")
+        AuberdineExporterDB.settings.minimapButtonHidden = true
+        print("|cff00ff00AuberdineExporter:|r Bouton minimap masqué. Utilisez '/auberdine minimap show' pour le réafficher.")
     else
         self.button:Show()
-        RecipesExtractorDB.settings.minimapButtonHidden = false
-        print("|cff00ff00RecipesExtractor:|r Bouton minimap affiché.")
+        AuberdineExporterDB.settings.minimapButtonHidden = false
+        print("|cff00ff00AuberdineExporter:|r Bouton minimap affiché.")
     end
 end
 
-function RecipesExtractorMinimapButton:SetVisibility(visible)
+function AuberdineMinimapButton:SetVisibility(visible)
     if not self.button then return end
     
     if visible then
         self.button:Show()
-        if RecipesExtractorDB and RecipesExtractorDB.settings then
-            RecipesExtractorDB.settings.minimapButtonHidden = false
+        if AuberdineExporterDB and AuberdineExporterDB.settings then
+            AuberdineExporterDB.settings.minimapButtonHidden = false
         end
     else
         self.button:Hide()
-        if RecipesExtractorDB and RecipesExtractorDB.settings then
-            RecipesExtractorDB.settings.minimapButtonHidden = true
+        if AuberdineExporterDB and AuberdineExporterDB.settings then
+            AuberdineExporterDB.settings.minimapButtonHidden = true
         end
     end
 end
 
-function RecipesExtractorMinimapButton:IsVisible()
+function AuberdineMinimapButton:IsVisible()
     return self.button and self.button:IsShown()
 end
 
-function RecipesExtractorMinimapButton:UpdateIcon()
+function AuberdineMinimapButton:UpdateIcon()
     if not self.button or not self.button.icon then return end
     
     -- Peut être utilisé pour changer l'icône selon l'état
-    local stats = RecipesExtractorDataManager:GetStatistics()
+    local stats = GetStatistics and GetStatistics() or {totalRecipes = 0}
     if stats.totalRecipes > 0 then
         -- Icône normale
-        self.button.icon:SetTexture("Interface\\AddOns\\RecipesExtractor\\UI\\Icons\\rc32.png")
+        self.button.icon:SetTexture("Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64.png")
         self.button.icon:SetDesaturated(false)
     else
         -- Icône grisée si aucune donnée
-        self.button.icon:SetTexture("Interface\\AddOns\\RecipesExtractor\\UI\\Icons\\rc32.png")
+        self.button.icon:SetTexture("Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64.png")
         self.button.icon:SetDesaturated(true)
     end
 end
 
 -- Animation de notification
-function RecipesExtractorMinimapButton:ShowNotification()
+function AuberdineMinimapButton:ShowNotification()
     if not self.button then return end
     
     -- Animation de pulsation
@@ -292,7 +294,7 @@ function RecipesExtractorMinimapButton:ShowNotification()
 end
 
 -- Fonction appelée lors du scan de recettes
-function RecipesExtractorMinimapButton:OnRecipesScanned()
+function AuberdineMinimapButton:OnRecipesScanned()
     self:UpdateIcon()
     self:ShowNotification()
 end

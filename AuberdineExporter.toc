@@ -11,5 +11,10 @@
 Libs\LibStub\LibStub.lua
 Libs\LibRecipes-3.0\lib.xml
 
+# UI Files
+UI\AuberdineMainFrame.lua
+UI\AuberdineExportFrame.lua
+UI\AuberdineMinimapButton.lua
+
 # Main addon
 AuberdineExporter.lua
