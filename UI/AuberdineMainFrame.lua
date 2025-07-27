@@ -142,6 +142,39 @@ function RecipesExtractorUI:CreateOverviewTab(parent)
     title:SetTextColor(1, 1, 0)
     yOffset = yOffset - 30
     
+    -- Data size information
+    if AuberdineExporter and AuberdineExporter.GetDataSizeInfo then
+        local totalChars, totalSize, charSizes = AuberdineExporter:GetDataSizeInfo()
+        
+        local sizeTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        sizeTitle:SetPoint("TOPLEFT", 10, yOffset)
+        sizeTitle:SetText("Data Size Information")
+        sizeTitle:SetTextColor(1, 0.5, 0)
+        yOffset = yOffset - 25
+        
+        local sizeText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        sizeText:SetPoint("TOPLEFT", 10, yOffset)
+        sizeText:SetJustifyH("LEFT")
+        sizeText:SetText(string.format(
+            "Total Characters: %d\nEstimated Data Size: ~%d bytes (~%.1f KB)\n\n" ..
+            "Note: Large datasets may cause export issues.\nUse 'Clear Memory Data' to reduce size.",
+            totalChars,
+            totalSize,
+            totalSize / 1024
+        ))
+        
+        -- Color warning if size is large
+        if totalSize > 50000 then -- >50KB
+            sizeText:SetTextColor(1, 0.3, 0.3) -- Red warning
+        elseif totalSize > 25000 then -- >25KB
+            sizeText:SetTextColor(1, 0.8, 0.3) -- Orange warning
+        else
+            sizeText:SetTextColor(0.8, 0.8, 0.8) -- Normal color
+        end
+        
+        yOffset = yOffset - 80
+    end
+    
     -- Overall stats
     local statsText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statsText:SetPoint("TOPLEFT", 10, yOffset)
@@ -192,9 +225,10 @@ function RecipesExtractorUI:CreateOverviewTab(parent)
         "1. Open your profession windows (Blacksmithing, Tailoring, etc.)\n" ..
         "2. The addon will automatically scan and save your recipes\n" ..
         "3. Use the Export tab to generate data for web integration\n" ..
-        "4. Use /recipes scan to manually scan all professions\n" ..
-        "5. Use /recipes reset to clear all data\n" ..
-        "6. Click the minimap button for quick access"
+        "4. Use /auberdine scan to manually scan all professions\n" ..
+        "5. Use /auberdine clear to reduce data size (keeps current character)\n" ..
+        "6. Use /auberdine reset to clear all data\n" ..
+        "7. Click the minimap button for quick access"
     )
     
     return frame
@@ -393,14 +427,44 @@ function RecipesExtractorUI:CreateSettingsTab(parent)
     resetBtn:SetSize(150, 25)
     resetBtn:SetText("Reset All Data")
     resetBtn:SetScript("OnClick", function()
-        StaticPopup_Show("RECIPES_EXTRACTOR_RESET_CONFIRM")
+        StaticPopup_Show("AUBERDINE_EXPORTER_RESET_CONFIRM")
+    end)
+    
+    -- Clear Memory Data button
+    local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    clearBtn:SetPoint("TOPLEFT", 170, yOffset)
+    clearBtn:SetSize(180, 25)
+    clearBtn:SetText("Clear Memory Data")
+    clearBtn:SetScript("OnClick", function()
+        StaticPopup_Show("AUBERDINE_EXPORTER_CLEAR_CONFIRM")
     end)
     
     yOffset = yOffset - 40
     
+    yOffset = yOffset - 40
+    
+    -- Data size info
+    local sizeInfoBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    sizeInfoBtn:SetPoint("TOPLEFT", 10, yOffset)
+    sizeInfoBtn:SetSize(180, 25)
+    sizeInfoBtn:SetText("Show Data Size Info")
+    sizeInfoBtn:SetScript("OnClick", function()
+        if AuberdineExporter and AuberdineExporter.GetDataSizeInfo then
+            local totalChars, totalSize, charSizes = AuberdineExporter:GetDataSizeInfo()
+            print(string.format("|cff00ff00AuberdineExporter:|r Data size info: %d characters, ~%d bytes total (~%.1f KB)", 
+                totalChars, totalSize, totalSize / 1024))
+            
+            for charKey, size in pairs(charSizes) do
+                print(string.format("  %s: ~%d bytes (~%.1f KB)", charKey, size, size / 1024))
+            end
+        else
+            print("|cffff0000AuberdineExporter:|r Size function not available!")
+        end
+    end)
+    
     -- Minimap button reset
     local resetMinimapBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    resetMinimapBtn:SetPoint("TOPLEFT", 10, yOffset)
+    resetMinimapBtn:SetPoint("TOPLEFT", 200, yOffset)
     resetMinimapBtn:SetSize(180, 25)
     resetMinimapBtn:SetText("Reset Minimap Position")
     resetMinimapBtn:SetScript("OnClick", function()
@@ -426,12 +490,39 @@ function RecipesExtractorUI:ShowExportFrame(exportType)
 end
 
 -- Static popup for reset confirmation
-StaticPopupDialogs["RECIPES_EXTRACTOR_RESET_CONFIRM"] = {
-    text = "Are you sure you want to reset all RecipesExtractor data? This cannot be undone!",
+StaticPopupDialogs["AUBERDINE_EXPORTER_RESET_CONFIRM"] = {
+    text = "Are you sure you want to reset all AuberdineExporter data? This cannot be undone!",
     button1 = "Yes",
     button2 = "No",
     OnAccept = function()
-        RecipesExtractorDatabase:ResetData()
+        if AuberdineExporter and AuberdineExporter.ResetAllData then
+            AuberdineExporter:ResetAllData()
+        else
+            -- Fallback reset method
+            if not AuberdineExporterDB or type(AuberdineExporterDB) ~= "table" then
+                AuberdineExporterDB = {}
+            end
+            AuberdineExporterDB.characters = {}
+            print("|cff00ff00AuberdineExporter:|r All data has been reset!")
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Static popup for clear memory confirmation
+StaticPopupDialogs["AUBERDINE_EXPORTER_CLEAR_CONFIRM"] = {
+    text = "Clear memory data to reduce export payload size?\n\nThis will remove character data from older sessions but keep current character data.",
+    button1 = "Clear",
+    button2 = "Cancel",
+    OnAccept = function()
+        if AuberdineExporter and AuberdineExporter.ClearMemoryData then
+            AuberdineExporter:ClearMemoryData()
+        else
+            print("|cffff0000AuberdineExporter:|r Clear function not available!")
+        end
     end,
     timeout = 0,
     whileDead = true,

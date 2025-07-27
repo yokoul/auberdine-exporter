@@ -38,8 +38,19 @@ git clone https://github.com/yokoul/auberdine-exporter.git AuberdineExporter
 ```
 /auberdine         # Ouvre l'interface principale
 /auberdine export  # Lance l'export immédiatement  
+/auberdine clear   # Nettoie les données en mémoire (garde le personnage actuel)
+/auberdine size    # Affiche la taille des données stockées
+/auberdine reset   # Remet à zéro toutes les données
 /auberdine help    # Affiche l'aide
 ```
+
+### Gestion des données
+- **Nettoyage sélectif** : `/auberdine clear` supprime les données des autres personnages mais garde le personnage actuel
+- **Vérification de taille** : `/auberdine size` pour voir l'espace utilisé par chaque personnage  
+- **Interface de gestion** : Boutons "Clear Memory Data" et "Reset All Data" dans l'onglet Settings
+- **Alerte automatique** : L'interface affiche un avertissement si les données deviennent trop volumineuses
+
+> ⚠️ **Important** : Des exports trop volumineux (>50KB) peuvent échouer lors de l'import sur auberdine.eu. Utilisez le nettoyage sélectif pour réduire la taille.
 
 ### Export des données
 1. Ouvrez toutes les fenêtres de métiers pour scanner les recettes
