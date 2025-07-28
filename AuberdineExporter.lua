@@ -1,5 +1,5 @@
 -- AuberdineExporter - Main addon file
-print("=== AuberdineExporter loading ===")
+-- print("=== AuberdineExporter loading ===")
 
 -- Global addon table
 AuberdineExporter = AuberdineExporter or {}
@@ -205,7 +205,8 @@ local function InitializeCharacterData()
             skills = GetCharacterSkills(),
             reputations = GetCharacterReputations()
         }
-        print("|cff00ff00AuberdineExporter:|r Personnage " .. UnitName("player") .. " initialisé (locale: " .. locale .. ")")
+        -- Character initialization message disabled for cleaner experience
+        -- print("|cff00ff00AuberdineExporter:|r Personnage " .. UnitName("player") .. " initialisé (locale: " .. locale .. ")")
     else
         -- Mettre à jour skills/réputations à chaque init
         AuberdineExporterDB.characters[charKey].skills = GetCharacterSkills()
@@ -288,7 +289,8 @@ local function CreateMinimapButton()
     for _, path in ipairs(iconPaths) do
         button.icon:SetTexture(path)
         if button.icon:GetTexture() then
-            print("|cff00ff00AuberdineExporter:|r Custom icon loaded: " .. path)
+            -- Debug message disabled for cleaner experience
+            -- print("|cff00ff00AuberdineExporter:|r Custom icon loaded: " .. path)
             iconLoaded = true
             break
         end
@@ -297,7 +299,7 @@ local function CreateMinimapButton()
     -- If custom icon doesn't load, use a recognizable recipe-related icon
     if not iconLoaded then
         button.icon:SetTexture("Interface\\Icons\\INV_Scroll_03") -- Scroll icon for recipes
-        print("|cffff8000AuberdineExporter:|r Custom icon not found, using recipe scroll icon")
+        -- print("|cffff8000AuberdineExporter:|r Custom icon not found, using recipe scroll icon")
     end
     
     -- Border texture
@@ -368,7 +370,8 @@ local function CreateMinimapButton()
         button:Show()
     end
     
-    print("|cff00ff00AuberdineExporter:|r Bouton minimap créé")
+    -- Minimap button creation message disabled for cleaner experience
+    -- print("|cff00ff00AuberdineExporter:|r Bouton minimap créé")
     return button
 end
 
@@ -436,12 +439,12 @@ local function md5_sumhexa(s)
     return string.format("%s%s", pass2, pass3):sub(1, 32)
 end
 
--- Export functions
+-- Export functions (GLOBAL pour l'UI)
 
 -- Variable globale pour le challenge (fixe pour la sécurité)
 -- AuberdineExporterChallenge est défini plus haut
 
-local function ExportToJSON()
+function ExportToJSON()
     -- Export multi-personnages avec séparation claire des données
     
     -- Métadonnées système pour auberdine.eu
@@ -753,7 +756,7 @@ local function ExportToJSON()
 end
 
 -- Export JSON simple pour auberdine.eu
-local function ExportToSimpleJSON()
+function ExportToSimpleJSON()
     -- On prend le personnage courant (celui connecté)
     local charKey = GetCurrentCharacterKey()
     local charData = AuberdineExporterDB.characters[charKey]
@@ -859,7 +862,7 @@ local function ExportToSimpleJSON()
 end
 
 -- Export CSV simple pour auberdine.eu
-local function ExportToCSV()
+function ExportToCSV()
     local csv = "Character,Realm,Level,Race,Class,Profession,ProfessionLevel,RecipeID,RecipeName,RecipeType,SpellLink\n"
     for charKey, charData in pairs(AuberdineExporterDB.characters) do
         for profName, profData in pairs(charData.professions or {}) do
@@ -881,7 +884,7 @@ local function ExportToCSV()
     return csv
 end
 
-local function CreateExportFrame(exportData, format)
+function CreateExportFrame(exportData, format)
     -- Create export window
     local exportFrame = CreateFrame("Frame", "AuberdineExporterExportFrame", UIParent)
     exportFrame:SetSize(500, 400)
@@ -1157,14 +1160,16 @@ local function OnTradeSkillShow()
     end
     
     if not AuberdineExporterDB or not AuberdineExporterDB.settings then
-        print("|cffff8000AuberdineExporter:|r Database not initialized, initializing...")
+        -- Database initialization message disabled for cleaner experience
+        -- print("|cffff8000AuberdineExporter:|r Database not initialized, initializing...")
         return
     end
     
     -- Petit délai pour éviter les conflits avec d'autres addons
     local function DelayedScan()
         local skillName, skillRank, skillMaxRank = GetTradeSkillLine()
-        print("|cff00ff00AuberdineExporter DEBUG:|r TradeSkill opened - Name: '" .. tostring(skillName) .. "', Rank: " .. tostring(skillRank) .. "/" .. tostring(skillMaxRank))
+        -- Debug message removed for cleaner chat experience
+        -- print("|cff00ff00AuberdineExporter DEBUG:|r TradeSkill opened - Name: '" .. tostring(skillName) .. "', Rank: " .. tostring(skillRank) .. "/" .. tostring(skillMaxRank))
 
         -- Rafraîchir la table si la langue a changé dynamiquement
         validProfessions = GetValidProfessions()
@@ -1235,19 +1240,13 @@ local function OnTradeSkillShow()
             }
 
             local recipeCount = 0
-            local recipesWithID = 0
             for _, recipeData in pairs(recipes) do 
                 recipeCount = recipeCount + 1 
-                if recipeData.id then
-                    recipesWithID = recipesWithID + 1
-                end
             end
             if recipeCount == 0 then
                 print("|cffff8000AuberdineExporter:|r Aucune recette trouvée pour " .. skillName .. ". Ouvrez la fenêtre du métier et vérifiez les filtres.")
             else
-                local successRate = math.floor((recipesWithID / recipeCount) * 100)
-                print("|cff00ff00AuberdineExporter:|r " .. skillName .. " scanned - " .. recipeCount .. " recipes found!")
-                print("|cff00ff00AuberdineExporter:|r IDs captured: " .. recipesWithID .. "/" .. recipeCount .. " (" .. successRate .. "%)")
+                print("|cff00ff00AuberdineExporter:|r " .. skillName .. " scanné - " .. recipeCount .. " recettes trouvées !")
             end
         else
             print("|cffff0000AuberdineExporter:|r Profession '" .. tostring(skillName) .. "' not recognized.")
@@ -1268,14 +1267,16 @@ local function OnCraftShow()
     end
     
     if not AuberdineExporterDB or not AuberdineExporterDB.settings then
-        print("|cffff8000AuberdineExporter:|r Database not initialized, initializing...")
+        -- Database initialization message disabled for cleaner experience
+        -- print("|cffff8000AuberdineExporter:|r Database not initialized, initializing...")
         return
     end
     
     -- Petit délai pour éviter les conflits avec d'autres addons
     local function DelayedCraftScan()
         local skillName, skillRank, skillMaxRank = GetCraftDisplaySkillLine()
-        print("|cff00ff00AuberdineExporter DEBUG:|r Craft opened - Name: '" .. tostring(skillName) .. "'")
+        -- Debug message removed for cleaner chat experience
+        -- print("|cff00ff00AuberdineExporter DEBUG:|r Craft opened - Name: '" .. tostring(skillName) .. "'")
         
         -- Rafraîchir la table si la langue a changé dynamiquement
         validProfessions = GetValidProfessions()
@@ -1352,19 +1353,13 @@ local function OnCraftShow()
 
             -- Protéger la boucle d'itération
             local recipeCount = 0
-            local recipesWithID = 0
             for _, recipeData in pairs(recipes) do 
                 recipeCount = recipeCount + 1 
-                if recipeData.id then
-                    recipesWithID = recipesWithID + 1
-                end
             end
             if recipeCount == 0 then
                 print("|cffff8000AuberdineExporter:|r Aucune recette trouvée pour " .. skillName .. ". Ouvrez la fenêtre du métier et vérifiez les filtres.")
             else
-                local successRate = math.floor((recipesWithID / recipeCount) * 100)
-                print("|cff00ff00AuberdineExporter:|r " .. skillName .. " scanned - " .. recipeCount .. " recipes found!")
-                print("|cff00ff00AuberdineExporter:|r IDs captured: " .. recipesWithID .. "/" .. recipeCount .. " (" .. successRate .. "%)")
+                print("|cff00ff00AuberdineExporter:|r " .. skillName .. " scanné - " .. recipeCount .. " recettes trouvées !")
             end
         end -- Fin if Enchantement/Enchanting
     end
@@ -1397,9 +1392,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
                         verboseDebug = false
                     }
                 }
-                print("|cff00ff00AuberdineExporter:|r Base de données initialisée à ADDON_LOADED")
+                -- Database initialization message disabled for cleaner experience
+                -- print("|cff00ff00AuberdineExporter:|r Base de données initialisée à ADDON_LOADED")
             end
-            print("|cff00ff00AuberdineExporter|r v" .. AuberdineExporterDB.version .. " chargé !")
+            -- Startup message reduced to essential information only
+            -- print("|cff00ff00AuberdineExporter|r v" .. AuberdineExporterDB.version .. " chargé !")
         end
     elseif event == "PLAYER_LOGIN" then
         -- S'assurer que la base de données principale est complètement initialisée
@@ -1416,25 +1413,28 @@ frame:SetScript("OnEvent", function(self, event, ...)
                     verboseDebug = false
                 }
             }
-            print("|cff00ff00AuberdineExporter:|r Base de données réinitialisée à PLAYER_LOGIN")
+            -- Database re-initialization message disabled for cleaner experience
+            -- print("|cff00ff00AuberdineExporter:|r Base de données réinitialisée à PLAYER_LOGIN")
         end
         InitializeCharacterData()
         CreateMinimapButton()
         if LibRecipes then
-            if LibRecipes.GetCount then
-                print("|cff00ff00AuberdineExporter:|r LibRecipes-3.0 chargé avec " .. LibRecipes:GetCount() .. " recettes !")
-            else
-                print("|cff00ff00AuberdineExporter:|r LibRecipes-1.0a chargé (version legacy)")
-            end
+            -- Library loading messages disabled for cleaner experience
+            -- if LibRecipes.GetCount then
+            --     print("|cff00ff00AuberdineExporter:|r LibRecipes-3.0 chargé avec " .. LibRecipes:GetCount() .. " recettes !")
+            -- else
+            --     print("|cff00ff00AuberdineExporter:|r LibRecipes-1.0a chargé (version legacy)")
+            -- end
         else
             print("|cffff8000AuberdineExporter:|r Attention : LibRecipes non trouvée")
         end
         C_Timer.After(2, function()
-            print("|cff00ff00AuberdineExporter:|r Scan automatique de vos métiers...")
+            -- Auto-scan message disabled for cleaner experience
+            -- print("|cff00ff00AuberdineExporter:|r Scan automatique de vos métiers...")
             ScanAllProfessions()
         end)
         print("|cff00ff00AuberdineExporter:|r Prêt ! Tapez /auberdine pour les commandes.")
-        print("|cff00ff00AuberdineExporter:|r Bouton minimap disponible. Utilisez /auberdine scan pour un scan manuel.")
+        -- print("|cff00ff00AuberdineExporter:|r Bouton minimap disponible. Utilisez /auberdine scan pour un scan manuel.")
     elseif event == "TRADE_SKILL_SHOW" then
         OnTradeSkillShow()
     elseif event == "CRAFT_SHOW" then
@@ -1452,7 +1452,8 @@ end
 -- Main slash commands - COMPLETE VERSION
 local function HandleSlashCommand(msg)
     local command = string.lower(msg or "")
-    print("|cff00ff00AuberdineExporter:|r Commande reçue : '" .. command .. "'")
+    -- Debug message removed for cleaner chat experience
+    -- print("|cff00ff00AuberdineExporter:|r Commande reçue : '" .. command .. "'")
     
     if command == "show" or command == "" or command == "ui" then
         ToggleMainFrame()
@@ -1622,6 +1623,6 @@ SLASH_AUBERDINE2 = "/ae"
 SLASH_AUBERDINE3 = "/aubex"
 SlashCmdList["AUBERDINE"] = HandleSlashCommand
 
-print("=== Commandes slash enregistrées ===")
-print("=== AuberdineExporter chargé complètement ===")
-print("=== Utilisez /auberdinetest pour tester, /auberdine pour les commandes principales ===")
+-- print("=== Commandes slash enregistrées ===")
+-- print("=== AuberdineExporter chargé complètement ===")
+-- print("=== Utilisez /auberdinetest pour tester, /auberdine pour les commandes principales ===")

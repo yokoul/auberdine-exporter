@@ -54,38 +54,33 @@ function AuberdineExporterUI:CreateMainFrame()
     frame.closeBtn:SetPoint("TOPRIGHT", -5, -5)
     frame.closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
-    -- Export button
+    -- Export Auberdine button
     local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    exportBtn:SetPoint("TOPLEFT", 50, -50)
-    exportBtn:SetSize(140, 25)
-    exportBtn:SetText("Exporter Données")
+    exportBtn:SetPoint("TOPLEFT", 30, -50)
+    exportBtn:SetSize(160, 25)
+    exportBtn:SetText("Export Auberdine")
     exportBtn:SetScript("OnClick", function()
-        if ExportToJSON then
-            local jsonData = ExportToJSON()
-            if CreateExportFrame then
-                CreateExportFrame(jsonData, "JSON")
-            else
-                print("|cff00ff00AuberdineExporter:|r Données d'export générées ! Utilisez /auberdine export pour les voir.")
-            end
-        end
+        local jsonData = ExportToJSON()
+        CreateExportFrame(jsonData, "Auberdine")
     end)
     
-    -- Clear Data button
+    -- Clear Cache button
     local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     clearBtn:SetPoint("TOPLEFT", 210, -50)
-    clearBtn:SetSize(140, 25)
-    clearBtn:SetText("Vider Mémoire")
+    clearBtn:SetSize(160, 25)
+    clearBtn:SetText("Supprimer Cache")
     clearBtn:SetScript("OnClick", function()
-        StaticPopup_Show("AUBERDINE_EXPORTER_CLEAR_CONFIRM")
-    end)
-    
-    -- Reset button
-    local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    resetBtn:SetPoint("TOPLEFT", 370, -50)
-    resetBtn:SetSize(140, 25)
-    resetBtn:SetText("Tout Supprimer")
-    resetBtn:SetScript("OnClick", function()
         StaticPopup_Show("AUBERDINE_EXPORTER_RESET_CONFIRM")
+    end)
+
+    -- Export CSV button
+    local csvBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    csvBtn:SetPoint("TOPLEFT", 390, -50)
+    csvBtn:SetSize(160, 25)
+    csvBtn:SetText("Export CSV")
+    csvBtn:SetScript("OnClick", function()
+        local csvData = ExportToCSV()
+        CreateExportFrame(csvData, "CSV")
     end)
     
     -- Content area
@@ -125,9 +120,9 @@ Personnage Actuel: %s (%s)
 
 Instructions:
 1. Ouvrez les fenêtres de métiers pour scanner automatiquement les recettes
-2. Utilisez "Exporter Données" pour générer un export pour auberdine.eu
-3. Utilisez "Vider Mémoire" pour réduire la taille du fichier (garde le personnage actuel)
-4. Utilisez "Tout Supprimer" pour effacer toutes les données
+2. Utilisez "Export Auberdine" pour générer un export complet pour auberdine.eu
+3. Utilisez "Export CSV" pour générer un export au format tableur
+4. Utilisez "Supprimer Cache" pour effacer toutes les données stockées
 
 Commandes:
 • /auberdine - Ouvrir cette interface
