@@ -29,6 +29,9 @@ Format Base64 avec signature cryptographique multi-passes
 ### 📊 **Données complètes**
 Recettes, métiers, skills, réputations, niveaux
 
+### 👥 **Gestion avancée (v1.3.2)**
+Organisation des personnages par type et groupes de compte
+
 </td>
 <td>
 
@@ -41,14 +44,22 @@ Export rapide et validation fiable
 ### 🌍 **Support multilingue**
 Français, Anglais, compatibilité toutes locales
 
+### 🎯 **Export sélectif (v1.3.2)**
+Choisissez quels personnages exporter
+
 </td>
 </tr>
 </table>
 
 ## 🚀 Installation rapide
 
+### 📦 CurseForge (Recommandé)
+[![CurseForge](https://img.shields.io/badge/CurseForge-Download-orange?style=for-the-badge&logo=curseforge)](https://legacy.curseforge.com/wow/addons/auberdineexporter)
+
+**Installation automatique via le client CurseForge/Overwolf**
+
 ### Téléchargement direct
-1. 📥 **Téléchargez** la [dernière version](https://github.com/yokoul/auberdine-exporter/releases)
+1. 📥 **Téléchargez** la [dernière version](https://github.com/yokoul/auberdine-exporter/releases) ou sur [CurseForge](https://legacy.curseforge.com/wow/addons/auberdineexporter)
 2. 📂 **Décompressez** dans `World of Warcraft/_classic_era_/Interface/AddOns/`
 3. 🔄 **Redémarrez** WoW Classic Era
 4. ✅ **Terminé !** Le bouton apparaît sur votre minimap
@@ -73,12 +84,49 @@ git clone https://github.com/yokoul/auberdine-exporter.git AuberdineExporter
 ### ⌨️ Commandes slash
 
 ```bash
+# Interface et export
 /auberdine              # Ouvre l'interface principale
 /auberdine export       # Lance l'export immédiatement  
 /auberdine clear        # Nettoie les données (garde le personnage actuel)
 /auberdine size         # Affiche la taille des données stockées
 /auberdine reset        # Remet à zéro toutes les données
+
+# Gestion des personnages (v1.3.2)
+/auberdine characters   # Liste tous les personnages avec leur configuration
+/auberdine settype main|alt|bank|mule  # Définit le type du personnage actuel
+/auberdine linkto <personnage>         # Lie au personnage principal spécifié
+/auberdine account <groupe>            # Définit le groupe de compte
+/auberdine export enable|disable       # Active/désactive l'export du personnage
+
 /auberdine help         # Affiche l'aide complète
+```
+
+### 👥 Gestion des personnages (v1.3.2)
+
+AuberdineExporter permet maintenant de gérer vos personnages de façon organisée :
+
+**Types de personnages :**
+- **Main** : Personnage principal
+- **Alt** : Personnage alternatif/reroll  
+- **Bank** : Personnage banque/stockage
+- **Mule** : Personnage de transport
+
+**Fonctionnalités :**
+- 🔗 **Liaison main/alt** : Reliez vos alts à votre main
+- 🏢 **Groupes de compte** : Organisez plusieurs comptes WoW
+- ✅ **Export sélectif** : Choisissez quels personnages exporter
+- 📊 **Relations exportées** : Les liens sont inclus dans l'export
+
+**Exemple d'usage :**
+```bash
+# Définir Carnalis comme personnage principal
+/auberdine settype main
+
+# Lier votre alt à votre main
+/auberdine linkto Carnalis
+
+# Créer un groupe pour vos deux comptes WoW
+/auberdine account compte1
 ```
 
 ### 🗂️ Gestion intelligente des données
@@ -283,6 +331,7 @@ Ce projet est sous **licence MIT**. Voir [LICENSE](./LICENSE) pour plus de déta
 
 [![auberdine.eu](https://img.shields.io/badge/auberdine.eu-Site%20officiel-blue?style=for-the-badge)](https://auberdine.eu)
 [![Discord](https://img.shields.io/badge/Discord-Communauté-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/auberdine)
+[![CurseForge](https://img.shields.io/badge/CurseForge-Download-orange?style=for-the-badge&logo=curseforge)](https://legacy.curseforge.com/wow/addons/auberdineexporter)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yokoul/auberdine-exporter)
 
 <img src="UI/Icons/ab128.png" width="32" height="32" alt="Auberdine Exporter" />

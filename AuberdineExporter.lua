@@ -279,10 +279,9 @@ local function CreateMinimapButton()
     
     -- Try multiple paths for your custom icon
     local iconPaths = {
-        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64",
-        "Interface/AddOns/AuberdineExporter/UI/Icons/ab64",
         "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64.png",
-        "Interface/AddOns/AuberdineExporter/UI/Icons/ab64.png"
+        "Interface/AddOns/AuberdineExporter/UI/Icons/ab64.png",
+        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64"
     }
     
     local iconLoaded = false
@@ -315,13 +314,16 @@ local function CreateMinimapButton()
             print("|cffff8000AuberdineExporter:|r UpdatePosition called before DB init, using default angle")
             local x = 80 * cos(0)
             local y = 80 * sin(0)
+            button:ClearAllPoints()
             button:SetPoint("CENTER", Minimap, "CENTER", x, y)
             return
         end
         
         local angle = AuberdineExporterDB.settings.minimapButtonAngle or 0
-        local x = 80 * cos(angle)
-        local y = 80 * sin(angle)
+        local radius = 80
+        local x = radius * cos(angle)
+        local y = radius * sin(angle)
+        button:ClearAllPoints()
         button:SetPoint("CENTER", Minimap, "CENTER", x, y)
     end
     
@@ -416,6 +418,272 @@ AuberdineExporterClientKey = "auberdine-v1"
 -- Challenge fixe pour auberdine.eu (sécurité côté serveur)
 AuberdineExporterChallenge = "auberdine-2025-recipe-export"
 
+-- ===== FONCTIONS DE GESTION DES PERSONNAGES ET COMPTES =====
+
+-- Types de personnages
+local CHARACTER_TYPES = {
+    MAIN = "main",          -- Personnage principal
+    ALT = "alt",           -- Personnage alternatif
+    BANK = "bank",         -- Personnage banque
+    MULE = "mule"          -- Personnage de stockage
+}
+
+-- Générateur de clés d'identification uniques (format: AB-7K9M-X2P4)
+local function GenerateUniqueAccountKey()
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    local key = "AB-"
+    
+    -- Premier bloc de 4 caractères
+    for i = 1, 4 do
+        local index = math.random(1, string.len(chars))
+        key = key .. string.sub(chars, index, index)
+    end
+    
+    key = key .. "-"
+    
+    -- Deuxième bloc de 4 caractères
+    for i = 1, 4 do
+        local index = math.random(1, string.len(chars))
+        key = key .. string.sub(chars, index, index)
+    end
+    
+    return key
+end
+
+-- Générateur de noms de groupes auto (format: DragonRouge-42)
+local function GenerateDefaultGroupName()
+    local words1 = {"Dragon", "Lune", "Soleil", "Ombre", "Flamme", "Glace", "Vent", "Terre", "Mer", "Ciel", "Fer", "Or", "Argent", "Bronze", "Cristal"}
+    local words2 = {"Rouge", "Bleu", "Vert", "Noir", "Blanc", "Argent", "Doré", "Sombre", "Brillant", "Gelé", "Ardent", "Mystique", "Ancien", "Noble", "Sauvage"}
+    
+    local word1 = words1[math.random(1, #words1)]
+    local word2 = words2[math.random(1, #words2)]
+    local number = math.random(10, 99)
+    
+    return word1 .. word2 .. "-" .. number
+end
+
+-- Obtenir ou créer une clé de compte unique globale
+local function GetOrCreateAccountKey()
+    if not AuberdineExporterDB.accountKey then
+        AuberdineExporterDB.accountKey = GenerateUniqueAccountKey()
+    end
+    return AuberdineExporterDB.accountKey
+end
+
+-- Exposer les fonctions dans l'objet global pour l'interface
+function AuberdineExporter:GetOrCreateAccountKey()
+    return GetOrCreateAccountKey()
+end
+
+function AuberdineExporter:GenerateDefaultGroupName()
+    return GenerateDefaultGroupName()
+end
+
+-- Initialiser les paramètres d'un personnage
+function InitializeCharacterSettings(charKey)
+    if not AuberdineExporterDB.characterSettings then
+        AuberdineExporterDB.characterSettings = {}
+    end
+    
+    if not AuberdineExporterDB.characterSettings[charKey] then
+        -- S'assurer qu'il y a toujours un groupe unique généré
+        local defaultGroup
+        if not AuberdineExporterDB.accountGroup then
+            defaultGroup = GenerateDefaultGroupName()
+            AuberdineExporterDB.accountGroup = defaultGroup
+        else
+            defaultGroup = AuberdineExporterDB.accountGroup
+        end
+        
+        AuberdineExporterDB.characterSettings[charKey] = {
+            exportEnabled = true,           -- Exporter ce personnage
+            characterType = CHARACTER_TYPES.MAIN, -- Type par défaut
+            mainCharacter = charKey,        -- Son main (lui-même par défaut)
+            accountGroup = defaultGroup,    -- Groupe de compte généré
+            notes = "",                     -- Notes utilisateur
+            lastModified = time()
+        }
+    end
+    return AuberdineExporterDB.characterSettings[charKey]
+end
+
+-- Fonctions de gestion des types de personnages
+function SetCharacterType(charKey, characterType)
+    if not CHARACTER_TYPES[string.upper(characterType)] then
+        print("|cffff0000AuberdineExporter:|r Type de personnage invalide: " .. characterType)
+        print("Types valides: main, alt, bank, mule")
+        return false
+    end
+    
+    InitializeCharacterSettings(charKey)
+    AuberdineExporterDB.characterSettings[charKey].characterType = CHARACTER_TYPES[string.upper(characterType)]
+    AuberdineExporterDB.characterSettings[charKey].lastModified = time()
+    
+    local charData = AuberdineExporterDB.characters[charKey]
+    local charName = charData and charData.name or charKey
+    print("|cff00ff00AuberdineExporter:|r " .. charName .. " défini comme " .. characterType)
+    return true
+end
+
+function GetCharacterType(charKey)
+    local settings = AuberdineExporterDB.characterSettings and AuberdineExporterDB.characterSettings[charKey]
+    return settings and settings.characterType or CHARACTER_TYPES.MAIN
+end
+
+-- Fonctions de gestion des liens entre personnages
+function LinkCharacterToMain(charKey, mainCharKey)
+    if not AuberdineExporterDB.characters[mainCharKey] then
+        print("|cffff0000AuberdineExporter:|r Personnage principal introuvable: " .. mainCharKey)
+        return false
+    end
+    
+    InitializeCharacterSettings(charKey)
+    InitializeCharacterSettings(mainCharKey)
+    
+    AuberdineExporterDB.characterSettings[charKey].mainCharacter = mainCharKey
+    AuberdineExporterDB.characterSettings[charKey].lastModified = time()
+    
+    local charData = AuberdineExporterDB.characters[charKey]
+    local mainData = AuberdineExporterDB.characters[mainCharKey]
+    local charName = charData and charData.name or charKey
+    local mainName = mainData and mainData.name or mainCharKey
+    
+    print("|cff00ff00AuberdineExporter:|r " .. charName .. " lié au main " .. mainName)
+    return true
+end
+
+-- Fonctions de gestion des groupes de comptes
+function SetAccountGroup(charKey, groupName)
+    InitializeCharacterSettings(charKey)
+    
+    -- Si aucun nom de groupe fourni, utiliser le groupe par défaut généré ou en générer un nouveau
+    if not groupName then
+        if AuberdineExporterDB.accountGroup then
+            groupName = AuberdineExporterDB.accountGroup
+        else
+            groupName = GenerateDefaultGroupName()
+            AuberdineExporterDB.accountGroup = groupName
+        end
+    end
+    
+    AuberdineExporterDB.characterSettings[charKey].accountGroup = groupName
+    AuberdineExporterDB.characterSettings[charKey].lastModified = time()
+    
+    local charData = AuberdineExporterDB.characters[charKey]
+    local charName = charData and charData.name or charKey
+    print("|cff00ff00AuberdineExporter:|r " .. charName .. " ajouté au groupe de compte: " .. groupName)
+end
+
+function GetAccountGroup(charKey)
+    local settings = AuberdineExporterDB.characterSettings and AuberdineExporterDB.characterSettings[charKey]
+    -- Si pas de groupe défini, en générer un automatiquement
+    if not settings or not settings.accountGroup then
+        if not AuberdineExporterDB.accountGroup then
+            AuberdineExporterDB.accountGroup = GenerateDefaultGroupName()
+        end
+        return AuberdineExporterDB.accountGroup
+    end
+    return settings.accountGroup
+end
+
+-- Fonction pour lister tous les personnages avec leurs informations
+function ListCharacterConfiguration()
+    print("|cff00ff00=== Configuration des Personnages ===|r")
+    
+    if not AuberdineExporterDB.characters or not next(AuberdineExporterDB.characters) then
+        print("|cffff8000Aucun personnage trouvé.|r")
+        return
+    end
+    
+    -- Organiser par groupe de compte
+    local accountGroups = {}
+    
+    for charKey, charData in pairs(AuberdineExporterDB.characters) do
+        local settings = InitializeCharacterSettings(charKey)
+        local group = settings.accountGroup
+        
+        if not accountGroups[group] then
+            accountGroups[group] = {}
+        end
+        
+        table.insert(accountGroups[group], {
+            key = charKey,
+            data = charData,
+            settings = settings
+        })
+    end
+    
+    for groupName, characters in pairs(accountGroups) do
+        print("|cff00ff8f=== Groupe de compte: " .. groupName .. " ===|r")
+        
+        for _, char in ipairs(characters) do
+            local exportStatus = char.settings.exportEnabled and "|cff00ff00[ACTIF]|r" or "|cffff0000[DÉSACTIVÉ]|r"
+            local typeColor = ""
+            
+            if char.settings.characterType == CHARACTER_TYPES.MAIN then
+                typeColor = "|cff00ff00"
+            elseif char.settings.characterType == CHARACTER_TYPES.ALT then
+                typeColor = "|cff8080ff"
+            elseif char.settings.characterType == CHARACTER_TYPES.BANK then
+                typeColor = "|cffffff00"
+            else
+                typeColor = "|cffff8000"
+            end
+            
+            local mainInfo = ""
+            if char.settings.mainCharacter ~= char.key then
+                local mainData = AuberdineExporterDB.characters[char.settings.mainCharacter]
+                if mainData then
+                    mainInfo = " → Main: " .. mainData.name
+                end
+            end
+            
+            print("  " .. exportStatus .. " " .. typeColor .. char.data.name .. "|r (" .. 
+                  char.settings.characterType .. ")" .. mainInfo)
+        end
+        print("")
+    end
+end
+
+-- Fonction pour activer/désactiver l'export d'un personnage
+function ToggleCharacterExport(charKey, enabled)
+    InitializeCharacterSettings(charKey)
+    
+    if enabled == nil then
+        -- Toggle
+        AuberdineExporterDB.characterSettings[charKey].exportEnabled = 
+            not AuberdineExporterDB.characterSettings[charKey].exportEnabled
+    else
+        AuberdineExporterDB.characterSettings[charKey].exportEnabled = enabled
+    end
+    
+    local charData = AuberdineExporterDB.characters[charKey]
+    local charName = charData and charData.name or charKey
+    local status = AuberdineExporterDB.characterSettings[charKey].exportEnabled and "activé" or "désactivé"
+    
+    print("|cff00ff00AuberdineExporter:|r Export " .. status .. " pour " .. charName)
+end
+
+-- Fonction pour obtenir la liste des personnages à exporter
+function GetExportableCharacters()
+    local exportableChars = {}
+    
+    if not AuberdineExporterDB.characters then
+        return exportableChars
+    end
+    
+    for charKey, charData in pairs(AuberdineExporterDB.characters) do
+        local settings = AuberdineExporterDB.characterSettings and AuberdineExporterDB.characterSettings[charKey]
+        local exportEnabled = not settings or settings.exportEnabled -- Défaut: activé
+        
+        if exportEnabled then
+            exportableChars[charKey] = charData
+        end
+    end
+    
+    return exportableChars
+end
+
 -- Implémentation MD5 simplifiée pour WoW Classic
 -- Utilise une approche compatible avec toutes les versions de WoW
 local function md5_sumhexa(s)
@@ -450,7 +718,7 @@ function ExportToJSON()
     -- Métadonnées système pour auberdine.eu
     local exportMetadata = {
         addon = "AuberdineExporter",
-        version = AuberdineExporterDB.version or "1.3.0",
+        version = AuberdineExporterDB.version or "1.3.2",
         timestamp = time(),
         exportDate = date("%Y-%m-%d %H:%M:%S"),
         clientKey = AuberdineExporterClientKey,
@@ -463,6 +731,14 @@ function ExportToJSON()
     -- Générer un nonce unique pour cette session d'export
     local nonce = string.format("%d_%d_%s", time(), math.random(1000, 9999), (UnitGUID("player") or "unknown"):sub(-8))
     exportMetadata.nonce = nonce
+    
+    -- Ajouter la clé d'identification unique du compte
+    exportMetadata.accountKey = GetOrCreateAccountKey()
+    -- S'assurer qu'il y a toujours un groupe unique (jamais "default")
+    if not AuberdineExporterDB.accountGroup then
+        AuberdineExporterDB.accountGroup = GenerateDefaultGroupName()
+    end
+    exportMetadata.accountGroup = AuberdineExporterDB.accountGroup
     
     -- Structure d'export multi-personnages
     local exportData = {
@@ -478,7 +754,21 @@ function ExportToJSON()
             totalProfessions = 0,
             totalRecipes = 0,
             exportedBy = UnitName("player") .. "-" .. GetRealmName(),
-            exportedAt = GetZoneText and GetZoneText() or "unknown"
+            exportedAt = GetZoneText and GetZoneText() or "unknown",
+            -- NOUVEAU v1.3.2: Statistiques de configuration
+            charactersByType = {},
+            accountGroups = {},
+            exportSettings = {
+                onlyExportEnabled = true,
+                includeCharacterConfig = true
+            }
+        },
+        
+        -- NOUVEAU v1.3.2: Relations entre personnages et comptes
+        relationships = {
+            accountGroups = {},     -- Groupes de comptes
+            mainCharacters = {},    -- Liens main/alt
+            characterTypes = {}     -- Types de personnages
         },
         
         -- Données de validation finale
@@ -498,9 +788,13 @@ function ExportToJSON()
         table.insert(exportData.validation.missingAPIs, "GetCraftDisplaySkillLine")
     end
     
-    -- Construire les données pour chaque personnage
-    if AuberdineExporterDB.characters then
-        for charKey, charData in pairs(AuberdineExporterDB.characters) do
+    -- Construire les données pour chaque personnage (uniquement ceux sélectionnés pour l'export)
+    local exportableCharacters = GetExportableCharacters()
+    if exportableCharacters then
+        for charKey, charData in pairs(exportableCharacters) do
+            -- Récupérer les paramètres de configuration du personnage
+            local charSettings = InitializeCharacterSettings(charKey)
+            
             local characterExport = {
                 -- Informations de base du personnage
                 info = {
@@ -512,6 +806,16 @@ function ExportToJSON()
                     class = charData.class,
                     locale = charData.locale or "unknown",
                     lastUpdate = charData.lastUpdate
+                },
+                
+                -- Configuration du personnage (NOUVEAU dans v1.3.2)
+                configuration = {
+                    characterType = charSettings.characterType,
+                    mainCharacter = charSettings.mainCharacter,
+                    accountGroup = charSettings.accountGroup,
+                    exportEnabled = charSettings.exportEnabled,
+                    lastModified = charSettings.lastModified,
+                    notes = charSettings.notes or ""
                 },
                 
                 -- Localisation si c'est le personnage connecté
@@ -593,6 +897,28 @@ function ExportToJSON()
             exportData.summary.totalCharacters = exportData.summary.totalCharacters + 1
             exportData.summary.totalProfessions = exportData.summary.totalProfessions + characterExport.stats.totalProfessions
             exportData.summary.totalRecipes = exportData.summary.totalRecipes + characterExport.stats.totalRecipes
+            
+            -- NOUVEAU v1.3.2: Collecter les statistiques de configuration
+            local charType = charSettings.characterType
+            if not exportData.summary.charactersByType[charType] then
+                exportData.summary.charactersByType[charType] = 0
+            end
+            exportData.summary.charactersByType[charType] = exportData.summary.charactersByType[charType] + 1
+            
+            local accountGroup = charSettings.accountGroup
+            if not exportData.summary.accountGroups[accountGroup] then
+                exportData.summary.accountGroups[accountGroup] = 0
+            end
+            exportData.summary.accountGroups[accountGroup] = exportData.summary.accountGroups[accountGroup] + 1
+            
+            -- Ajouter aux relations
+            exportData.relationships.characterTypes[charKey] = charSettings.characterType
+            exportData.relationships.mainCharacters[charKey] = charSettings.mainCharacter
+            
+            if not exportData.relationships.accountGroups[accountGroup] then
+                exportData.relationships.accountGroups[accountGroup] = {}
+            end
+            table.insert(exportData.relationships.accountGroups[accountGroup], charKey)
         end
     end
     
@@ -1381,7 +1707,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if addonName == "AuberdineExporter" then
             if not AuberdineExporterDB then
                 AuberdineExporterDB = {
-                    version = "1.3.0",
+                    version = "1.3.2",
                     characters = {},
                     settings = {
                         autoScan = true,
@@ -1390,7 +1716,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
                         minimapButtonAngle = 0,
                         minimapButtonHidden = false,
                         verboseDebug = false
-                    }
+                    },
+                    characterSettings = {},
+                    accountLinks = {},
+                    -- S'assurer qu'un groupe unique est créé dès l'initialisation
+                    accountGroup = GenerateDefaultGroupName()
                 }
                 -- Database initialization message disabled for cleaner experience
                 -- print("|cff00ff00AuberdineExporter:|r Base de données initialisée à ADDON_LOADED")
@@ -1402,7 +1732,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         -- S'assurer que la base de données principale est complètement initialisée
         if not AuberdineExporterDB then
             AuberdineExporterDB = {
-                version = "1.3.0",
+                version = "1.3.2",
                 characters = {},
                 settings = {
                     autoScan = true,
@@ -1411,23 +1741,58 @@ frame:SetScript("OnEvent", function(self, event, ...)
                     minimapButtonAngle = 0,
                     minimapButtonHidden = false,
                     verboseDebug = false
-                }
+                },
+                characterSettings = {},
+                accountLinks = {},
+                -- S'assurer qu'un groupe unique est créé dès l'initialisation
+                accountGroup = GenerateDefaultGroupName()
             }
             -- Database re-initialization message disabled for cleaner experience
             -- print("|cff00ff00AuberdineExporter:|r Base de données réinitialisée à PLAYER_LOGIN")
         end
         InitializeCharacterData()
         CreateMinimapButton()
-        if LibRecipes then
-            -- Library loading messages disabled for cleaner experience
-            -- if LibRecipes.GetCount then
-            --     print("|cff00ff00AuberdineExporter:|r LibRecipes-3.0 chargé avec " .. LibRecipes:GetCount() .. " recettes !")
-            -- else
-            --     print("|cff00ff00AuberdineExporter:|r LibRecipes-1.0a chargé (version legacy)")
-            -- end
-        else
-            print("|cffff8000AuberdineExporter:|r Attention : LibRecipes non trouvée")
+        
+        -- MIGRATION v1.3.2: Remplacer "default" par un nom unique généré
+        if AuberdineExporterDB.accountGroup == "default" or not AuberdineExporterDB.accountGroup then
+            local newGroupName = GenerateDefaultGroupName()
+            AuberdineExporterDB.accountGroup = newGroupName
+            
+            -- Mettre à jour tous les personnages qui utilisent "default"
+            if AuberdineExporterDB.characterSettings then
+                for charKey, settings in pairs(AuberdineExporterDB.characterSettings) do
+                    if not settings.accountGroup or settings.accountGroup == "default" then
+                        settings.accountGroup = newGroupName
+                        settings.lastModified = time()
+                    end
+                end
+            end
+            
+            print(string.format("|cff00ff00AuberdineExporter:|r Migration v1.3.2 - Nouveau nom de groupe généré: %s", newGroupName))
         end
+        
+        -- Vérifier LibRecipes avec retry
+        local function CheckLibRecipes()
+            if not LibRecipes then
+                LibRecipes = LibStub("LibRecipes-3.0", true) or LibStub("LibRecipes-1.0a", true)
+            end
+            
+            if LibRecipes then
+                -- Library loading messages disabled for cleaner experience
+                -- if LibRecipes.GetCount then
+                --     print("|cff00ff00AuberdineExporter:|r LibRecipes-3.0 chargé avec " .. LibRecipes:GetCount() .. " recettes !")
+                -- else
+                --     print("|cff00ff00AuberdineExporter:|r LibRecipes-1.0a chargé (version legacy)")
+                -- end
+            else
+                print("|cffff8000AuberdineExporter:|r Attention : LibRecipes non trouvée - Retry dans 3s...")
+                C_Timer.After(3, CheckLibRecipes)
+                return
+            end
+        end
+        
+        CheckLibRecipes()
+        
         C_Timer.After(2, function()
             -- Auto-scan message disabled for cleaner experience
             -- print("|cff00ff00AuberdineExporter:|r Scan automatique de vos métiers...")
@@ -1449,17 +1814,21 @@ SlashCmdList["AUBERDINETEST"] = function(msg)
     print("Les commandes principales devraient fonctionner...")
 end
 
--- Main slash commands - COMPLETE VERSION
+-- Main slash commands - COMPLETE VERSION with v1.3.2 features
 local function HandleSlashCommand(msg)
-    local command = string.lower(msg or "")
+    local args = {}
+    for word in string.gmatch(msg or "", "%S+") do
+        table.insert(args, word)
+    end
+    
+    local command = string.lower(args[1] or "")
     -- Debug message removed for cleaner chat experience
     -- print("|cff00ff00AuberdineExporter:|r Commande reçue : '" .. command .. "'")
     
     if command == "show" or command == "" or command == "ui" then
         ToggleMainFrame()
     elseif command == "characters" or command == "chars" then
-        ToggleMainFrame()
-        -- Auto switch to characters tab if possible
+        ListCharacterConfiguration()
     elseif command == "skills" then
         ShowSkillLines()
     elseif command == "autoscan" then
@@ -1589,14 +1958,133 @@ local function HandleSlashCommand(msg)
                 print("Total characters: " .. charCount)
             end
         end
+    -- NOUVELLES COMMANDES v1.3.2 - Gestion des personnages et comptes
+    elseif command == "settype" then
+        -- /auberdine settype main|alt|bank|mule [character]
+        local characterType = args[2]
+        local charName = args[3]
+        
+        if not characterType then
+            print("|cffff0000AuberdineExporter:|r Usage: /auberdine settype <main|alt|bank|mule> [character]")
+            print("Si aucun personnage n'est spécifié, s'applique au personnage actuel.")
+            return
+        end
+        
+        local charKey = charName and (charName .. "-" .. GetRealmName()) or GetCurrentCharacterKey()
+        SetCharacterType(charKey, characterType)
+        
+    elseif command == "linkto" then
+        -- /auberdine linkto <mainCharacter>
+        local mainCharName = args[2]
+        
+        if not mainCharName then
+            print("|cffff0000AuberdineExporter:|r Usage: /auberdine linkto <mainCharacter>")
+            print("Lie le personnage actuel au personnage principal spécifié.")
+            return
+        end
+        
+        local charKey = GetCurrentCharacterKey()
+        local mainCharKey = mainCharName .. "-" .. GetRealmName()
+        LinkCharacterToMain(charKey, mainCharKey)
+        
+    elseif command == "account" then
+        -- /auberdine account <groupName>
+        local groupName = args[2]
+        
+        if not groupName then
+            print("|cffff0000AuberdineExporter:|r Usage: /auberdine account <groupName>")
+            print("Définit le groupe de compte pour le personnage actuel.")
+            return
+        end
+        
+        local charKey = GetCurrentCharacterKey()
+        SetAccountGroup(charKey, groupName)
+        
+    elseif command == "export" then
+        -- /auberdine export enable|disable [character]
+        local action = args[2]
+        local charName = args[3]
+        
+        if not action then
+            print("|cffff0000AuberdineExporter:|r Usage: /auberdine export <enable|disable> [character]")
+            print("Active ou désactive l'export pour un personnage.")
+            return
+        end
+        
+        local enabled = string.lower(action) == "enable"
+        local charKey = charName and (charName .. "-" .. GetRealmName()) or GetCurrentCharacterKey()
+        ToggleCharacterExport(charKey, enabled)
+        
+    elseif command == "config" then
+        -- /auberdine config - Affiche la configuration complète
+        ListCharacterConfiguration()
+        
+    elseif command == "accountkey" then
+        -- /auberdine accountkey - Affiche la clé d'identification unique du compte
+        local accountKey = GetOrCreateAccountKey()
+        print("|cff00ff00AuberdineExporter:|r Clé d'identification unique: |cffffffff" .. accountKey .. "|r")
+        print("Cette clé permet de lier vos comptes WoW dans le système de groupes.")
+        print("Partagez cette clé avec vos autres comptes pour les regrouper.")
+        
+    elseif command == "groupname" then
+        -- /auberdine groupname [newName] - Affiche ou change le nom du groupe
+        local newName = args[2]
+        
+        if newName then
+            -- Changer le nom du groupe pour tous les personnages du compte
+            if not AuberdineExporterDB.characterSettings then
+                AuberdineExporterDB.characterSettings = {}
+            end
+            
+            -- S'assurer qu'il y a toujours un groupe unique généré
+            if not AuberdineExporterDB.accountGroup then
+                AuberdineExporterDB.accountGroup = GenerateDefaultGroupName()
+            end
+            local oldGroup = AuberdineExporterDB.accountGroup
+            AuberdineExporterDB.accountGroup = newName
+            
+            -- Mettre à jour tous les personnages qui utilisent l'ancien groupe
+            for charKey, settings in pairs(AuberdineExporterDB.characterSettings) do
+                if settings.accountGroup == oldGroup then
+                    settings.accountGroup = newName
+                    settings.lastModified = time()
+                end
+            end
+            
+            print("|cff00ff00AuberdineExporter:|r Nom de groupe changé: |cffffffff" .. newName .. "|r")
+        else
+            -- Afficher le nom du groupe actuel - s'assurer qu'il y en a un
+            if not AuberdineExporterDB.accountGroup then
+                AuberdineExporterDB.accountGroup = GenerateDefaultGroupName()
+            end
+            local currentGroup = AuberdineExporterDB.accountGroup
+            print("|cff00ff00AuberdineExporter:|r Nom de groupe actuel: |cffffffff" .. currentGroup .. "|r")
+            print("Utilisez '/auberdine groupname <nouveau_nom>' pour le changer.")
+        end
+        
     elseif command == "help" then
         print("|cff00ff00AuberdineExporter Commands:|r")
+        print("|cffff8000=== COMMANDES PRINCIPALES ===|r")
         print("  /auberdine - Ouvrir l'interface principale")
         print("  /auberdine ui - Ouvrir l'interface principale")
-        print("  /auberdine characters - Ouvrir l'onglet personnages")
         print("  /auberdine scan - Scanner tous vos métiers (inclut récolte)")
         print("  /auberdine recipes - Afficher toutes les recettes avec IDs")
         print("  /auberdine stats - Afficher les statistiques dans le chat")
+        print("")
+        print("|cffff8000=== GESTION DES PERSONNAGES (v1.3.2) ===|r")
+        print("  /auberdine characters - Lister tous les personnages et leur config")
+        print("  /auberdine config - Afficher la configuration des personnages")
+        print("  /auberdine settype <main|alt|bank|mule> - Définir le type du personnage")
+        print("  /auberdine linkto <mainCharacter> - Lier au personnage principal")
+        print("  /auberdine account <groupName> - Définir le groupe de compte")
+        print("  /auberdine export <enable|disable> - Activer/désactiver l'export")
+        print("")
+        print("|cffff8000=== GESTION DES GROUPES MULTI-COMPTES ===|r")
+        print("  /auberdine accountkey - Afficher votre clé d'identification unique")
+        print("  /auberdine groupname [nom] - Afficher/changer le nom de votre groupe")
+        print("    Exemples: DragonRouge-42, CarnAlliance, MesPersonnages")
+        print("")
+        print("|cffff8000=== COMMANDES SYSTÈME ===|r")
         print("  /auberdine debug - Toggle verbose debug messages")
         print("  /auberdine debugdb - Debug complet de la base de données")
         print("  /auberdine skills - Show all skill lines (debug)")
