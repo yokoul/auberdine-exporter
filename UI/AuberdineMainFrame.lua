@@ -465,19 +465,13 @@ function AuberdineExporterUI:CreateCharacterConfigTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints()
     
-    -- Titre
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 10, -10)
-    title:SetText("Gestion des Personnages (v1.3.2)")
-    title:SetTextColor(1, 1, 0)
-    
-    -- Instructions
-    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    instructions:SetPoint("TOPLEFT", 10, -35)
-    instructions:SetPoint("TOPRIGHT", -10, -35)
+    -- Instructions simplifiées
+    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    instructions:SetPoint("TOPLEFT", 10, -10)
+    instructions:SetPoint("TOPRIGHT", -10, -10)
     instructions:SetJustifyH("LEFT")
     instructions:SetText("Cliquez sur les cartes pour configurer vos personnages. Utilisez les boutons en bas pour les actions.")
-    instructions:SetTextColor(0.8, 0.8, 0.8)
+    instructions:SetTextColor(0.7, 0.7, 0.7)
     
     -- Schéma de tous les personnages
     if not AuberdineExporterDB or not AuberdineExporterDB.characters then
@@ -857,7 +851,7 @@ function AuberdineExporterUI:ShowCharacterConfigFrame()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)
-    frame.title:SetText("Configuration des Personnages v1.3.2")
+    frame.title:SetText("Famille v1.3.2")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -871,27 +865,19 @@ function AuberdineExporterUI:ShowCharacterConfigFrame()
         end
     end)
     
-    -- Content area
-    self:CreateCharacterConfigContent(frame)
+    -- Content area - utiliser notre nouvel onglet optimisé
+    local configTab = self:CreateCharactersTab(frame)
+    configTab:SetAllPoints()
     
     self.charConfigFrame = frame
     frame:Show()
 end
 
-function AuberdineExporterUI:CreateCharacterConfigContent(frame)
-    local yOffset = -40
-    
-    -- Titre principal seulement (libérer l'espace)
-    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    instructions:SetPoint("TOPLEFT", 20, yOffset)
-    instructions:SetText("Configuration des Personnages")
-    instructions:SetTextColor(1, 1, 0)
-    
-    yOffset = yOffset - 35
+
     
     -- Zone de scroll MAXIMISÉE pour l'affichage graphique des cartes
     local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 20, yOffset)
+    scrollFrame:SetPoint("TOPLEFT", 20, -25)  -- Plus haut car pas de titre
     scrollFrame:SetPoint("BOTTOMRIGHT", -40, 130)  -- Beaucoup plus d'espace
     
     local content = CreateFrame("Frame", nil, scrollFrame)
@@ -996,62 +982,10 @@ function AuberdineExporterUI:CreateCharacterConfigContent(frame)
         end
     end)
     
-    -- Échantillons de couleur pour chaque type (nouvelles couleurs)
-    local typeLabels = {
-        {type = "Main", color = {0.1, 0.4, 0.7}, x = 60},
-        {type = "Alt", color = {0.6, 0.3, 0.8}, x = 120},
-        {type = "Banque", color = {0.8, 0.6, 0.1}, x = 180},
-        {type = "Mule", color = {0.7, 0.4, 0.2}, x = 250}
-    }
-    
-    for _, typeInfo in ipairs(typeLabels) do
-        local colorSample = legendFrame:CreateTexture(nil, "ARTWORK")
-        colorSample:SetSize(12, 12)
-        colorSample:SetPoint("TOPLEFT", typeInfo.x, -8)
-        colorSample:SetColorTexture(typeInfo.color[1], typeInfo.color[2], typeInfo.color[3], 1)
-        
-        local typeText = legendFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        typeText:SetPoint("TOPLEFT", typeInfo.x + 15, -5)
-        typeText:SetText(typeInfo.type)
-        typeText:SetTextColor(0.9, 0.9, 0.9)
-    end
-    
-    -- Explication des connexions
-    local connectionText = legendFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    connectionText:SetPoint("TOPLEFT", 350, -5)
-    connectionText:SetText("Connexions: ")
-    connectionText:SetTextColor(1, 1, 1)
-    
-    -- Ligne d'exemple
-    local sampleLine = legendFrame:CreateTexture(nil, "ARTWORK")
-    sampleLine:SetSize(20, 2)
-    sampleLine:SetPoint("TOPLEFT", 420, -10)
-    sampleLine:SetColorTexture(0.7, 0.7, 0.7, 0.8)
-    
-    local connectionExplain = legendFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    connectionExplain:SetPoint("TOPLEFT", 445, -5)
-    connectionExplain:SetText("Hiérarchie des personnages")
-    connectionExplain:SetTextColor(0.9, 0.9, 0.9)
-    
-    -- Indicateur export
-    local exportSample = legendFrame:CreateTexture(nil, "ARTWORK")
-    exportSample:SetSize(12, 12)
-    exportSample:SetPoint("TOPLEFT", 620, -8)
-    exportSample:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
-    
-    local exportText = legendFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    exportText:SetPoint("TOPLEFT", 635, -5)
-    exportText:SetText("Export activé/désactivé")
-    exportText:SetTextColor(0.9, 0.9, 0.9)
-    
-    yOffset = yOffset - 45
-    
-    -- Zone de scroll pour l'affichage graphique des cartes
-    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 20, yOffset)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -40, 80)
-    
-    local content = CreateFrame("Frame", nil, scrollFrame)
+    return frame
+end
+
+-- NOUVEAU: Fonction pour créer l'affichage graphique en cartes
     scrollFrame:SetScrollChild(content)
     content:SetWidth(scrollFrame:GetWidth())
     
@@ -1281,10 +1215,14 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
                         UIDropDownMenu_SetText(card.roleDropdown, self.text)
                         CloseDropDownMenus()
                         
-                        -- Recharger automatiquement l'affichage
+                        -- Recharger automatiquement l'affichage avec notre nouveau système
                         C_Timer.After(0.1, function()
-                            parentFrame:Hide()
+                            if AuberdineExporterUI.charConfigFrame then
+                                AuberdineExporterUI.charConfigFrame:Hide()
+                                AuberdineExporterUI.charConfigFrame = nil
+                            end
                             AuberdineExporterUI:ShowCharacterConfigFrame()
+                            print("Type de personnage mis à jour: " .. self.text)
                         end)
                     end
                 end
