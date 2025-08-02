@@ -465,13 +465,19 @@ function AuberdineExporterUI:CreateCharacterConfigTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints()
     
-    -- Instructions simplifiées
-    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    instructions:SetPoint("TOPLEFT", 10, -10)
-    instructions:SetPoint("TOPRIGHT", -10, -10)
+    -- Titre
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 10, -10)
+    title:SetText("Gestion des Personnages (v1.3.2)")
+    title:SetTextColor(1, 1, 0)
+    
+    -- Instructions
+    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    instructions:SetPoint("TOPLEFT", 10, -35)
+    instructions:SetPoint("TOPRIGHT", -10, -35)
     instructions:SetJustifyH("LEFT")
     instructions:SetText("Cliquez sur les cartes pour configurer vos personnages. Utilisez les boutons en bas pour les actions.")
-    instructions:SetTextColor(0.7, 0.7, 0.7)
+    instructions:SetTextColor(0.8, 0.8, 0.8)
     
     -- Schéma de tous les personnages
     if not AuberdineExporterDB or not AuberdineExporterDB.characters then
@@ -865,19 +871,27 @@ function AuberdineExporterUI:ShowCharacterConfigFrame()
         end
     end)
     
-    -- Content area - utiliser notre nouvel onglet optimisé
-    local configTab = self:CreateCharactersTab(frame)
-    configTab:SetAllPoints()
+    -- Content area
+    self:CreateCharacterConfigContent(frame)
     
     self.charConfigFrame = frame
     frame:Show()
 end
 
-
+function AuberdineExporterUI:CreateCharacterConfigContent(frame)
+    local yOffset = -40
+    
+    -- Titre principal seulement (libérer l'espace)
+    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    instructions:SetPoint("TOPLEFT", 20, yOffset)
+    instructions:SetText("Structure familliale")
+    instructions:SetTextColor(1, 1, 0)
+    
+    yOffset = yOffset - 35
     
     -- Zone de scroll MAXIMISÉE pour l'affichage graphique des cartes
     local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 20, -25)  -- Plus haut car pas de titre
+    scrollFrame:SetPoint("TOPLEFT", 20, yOffset)
     scrollFrame:SetPoint("BOTTOMRIGHT", -40, 130)  -- Beaucoup plus d'espace
     
     local content = CreateFrame("Frame", nil, scrollFrame)
@@ -983,54 +997,6 @@ end
     end)
     
     return frame
-end
-
--- NOUVEAU: Fonction pour créer l'affichage graphique en cartes
-    scrollFrame:SetScrollChild(content)
-    content:SetWidth(scrollFrame:GetWidth())
-    
-    -- Créer l'affichage graphique des personnages
-    self:CreateCharacterCardLayout(content, frame)
-    
-    -- Boutons d'actions globales en bas
-    local globalActionsFrame = CreateFrame("Frame", nil, frame)
-    globalActionsFrame:SetPoint("BOTTOMLEFT", 20, 20)
-    globalActionsFrame:SetPoint("BOTTOMRIGHT", -20, 20)
-    globalActionsFrame:SetHeight(40)
-    
-    -- Séparateur
-    local bottomSeparator = globalActionsFrame:CreateTexture(nil, "ARTWORK")
-    bottomSeparator:SetPoint("TOPLEFT", 0, 35)
-    bottomSeparator:SetPoint("TOPRIGHT", 0, 35)
-    bottomSeparator:SetHeight(2)
-    bottomSeparator:SetColorTexture(0.5, 0.5, 0.5, 1)
-    
-    -- Bouton Actualiser (puisque l'auto-refresh ne marche pas toujours)
-    local refreshBtn = CreateFrame("Button", nil, globalActionsFrame, "UIPanelButtonTemplate")
-    refreshBtn:SetPoint("TOPLEFT", 0, 25)
-    refreshBtn:SetSize(100, 25)
-    refreshBtn:SetText("Actualiser")
-    refreshBtn:SetScript("OnClick", function()
-        -- Forcer la fermeture complète et recréation
-        if AuberdineExporterUI.charConfigFrame then
-            AuberdineExporterUI.charConfigFrame:Hide()
-            AuberdineExporterUI.charConfigFrame = nil
-        end
-        AuberdineExporterUI:ShowCharacterConfigFrame()
-        print("Interface des personnages actualisée!")
-    end)
-    
-    -- Bouton de fermeture
-    local closeBtn = CreateFrame("Button", nil, globalActionsFrame, "UIPanelButtonTemplate")
-    closeBtn:SetPoint("TOPRIGHT", 0, 25)
-    closeBtn:SetSize(80, 25)
-    closeBtn:SetText("Fermer")
-    closeBtn:SetScript("OnClick", function()
-        frame:Hide()
-        if AuberdineExporterUI.mainFrame then
-            AuberdineExporterUI.mainFrame:Show()
-        end
-    end)
 end
 
 -- NOUVEAU: Fonction pour créer l'affichage graphique en cartes
@@ -1215,14 +1181,10 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
                         UIDropDownMenu_SetText(card.roleDropdown, self.text)
                         CloseDropDownMenus()
                         
-                        -- Recharger automatiquement l'affichage avec notre nouveau système
+                        -- Recharger automatiquement l'affichage
                         C_Timer.After(0.1, function()
-                            if AuberdineExporterUI.charConfigFrame then
-                                AuberdineExporterUI.charConfigFrame:Hide()
-                                AuberdineExporterUI.charConfigFrame = nil
-                            end
+                            parentFrame:Hide()
                             AuberdineExporterUI:ShowCharacterConfigFrame()
-                            print("Type de personnage mis à jour: " .. self.text)
                         end)
                     end
                 end
