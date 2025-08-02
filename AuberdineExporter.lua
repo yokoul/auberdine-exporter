@@ -261,121 +261,8 @@ local function ScanAllProfessions()
     end
 end
 
--- Minimap Button
-local function CreateMinimapButton()
-    if AuberdineExporterMinimapButton then
-        return AuberdineExporterMinimapButton
-    end
-    local button = CreateFrame("Button", "AuberdineExporterMinimapButton", Minimap)
-    button:SetSize(32, 32)
-    button:SetFrameStrata("MEDIUM")
-    button:SetFrameLevel(8)
-    button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    
-    -- Icon texture
-    button.icon = button:CreateTexture(nil, "BACKGROUND")
-    button.icon:SetSize(20, 20)
-    button.icon:SetPoint("CENTER", 0, 1)
-    
-    -- Try multiple paths for your custom icon
-    local iconPaths = {
-        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64.png",
-        "Interface/AddOns/AuberdineExporter/UI/Icons/ab64.png",
-        "Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab64"
-    }
-    
-    local iconLoaded = false
-    for _, path in ipairs(iconPaths) do
-        button.icon:SetTexture(path)
-        if button.icon:GetTexture() then
-            -- Debug message disabled for cleaner experience
-            -- print("|cff00ff00AuberdineExporter:|r Custom icon loaded: " .. path)
-            iconLoaded = true
-            break
-        end
-    end
-    
-    -- If custom icon doesn't load, use a recognizable recipe-related icon
-    if not iconLoaded then
-        button.icon:SetTexture("Interface\\Icons\\INV_Scroll_03") -- Scroll icon for recipes
-        -- print("|cffff8000AuberdineExporter:|r Custom icon not found, using recipe scroll icon")
-    end
-    
-    -- Border texture
-    button.border = button:CreateTexture(nil, "OVERLAY")
-    button.border:SetSize(52, 52)
-    button.border:SetPoint("TOPLEFT", -10, 10)
-    button.border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    
-    -- Position around minimap
-    local function UpdatePosition()
-        -- Vérification de sécurité pour la base de données
-        if not AuberdineExporterDB or not AuberdineExporterDB.settings then
-            print("|cffff8000AuberdineExporter:|r UpdatePosition called before DB init, using default angle")
-            local x = 80 * cos(0)
-            local y = 80 * sin(0)
-            button:ClearAllPoints()
-            button:SetPoint("CENTER", Minimap, "CENTER", x, y)
-            return
-        end
-        
-        local angle = AuberdineExporterDB.settings.minimapButtonAngle or 0
-        local radius = 80
-        local x = radius * cos(angle)
-        local y = radius * sin(angle)
-        button:ClearAllPoints()
-        button:SetPoint("CENTER", Minimap, "CENTER", x, y)
-    end
-    
-    -- Click handlers
-    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:SetScript("OnClick", function(self, clickType)
-        if clickType == "LeftButton" then
-            ToggleMainFrame()
-        elseif clickType == "RightButton" then
-            print("|cff00ff00AuberdineExporter Menu:|r")
-            print("  Clic gauche - Ouvrir l'interface")
-            print("  /auberdine - Commandes")
-            print("  /auberdine help - Aide complète")
-        end
-    end)
-    
-    -- Dragging
-    button:SetMovable(true)
-    button:EnableMouse(true)
-    button:RegisterForDrag("LeftButton")
-    button:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-    button:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        -- Calculate new angle
-        local centerX, centerY = Minimap:GetCenter()
-        local buttonX, buttonY = self:GetCenter()
-        local angle = atan2(buttonY - centerY, buttonX - centerX)
-        if AuberdineExporterDB and AuberdineExporterDB.settings then
-            AuberdineExporterDB.settings.minimapButtonAngle = angle
-        end
-        UpdatePosition() -- Snap to proper position
-    end)
-    
-    UpdatePosition()
-    
-    -- Vérification de sécurité pour l'affichage du bouton
-    if AuberdineExporterDB and AuberdineExporterDB.settings then
-        if not AuberdineExporterDB.settings.minimapButtonHidden then
-            button:Show()
-        else
-            button:Hide()
-        end
-    else
-        button:Show()
-    end
-    
-    -- Minimap button creation message disabled for cleaner experience
-    -- print("|cff00ff00AuberdineExporter:|r Bouton minimap créé")
-    return button
-end
+-- Minimap Button (now handled by AuberdineMinimapButton.lua)
+-- Old CreateMinimapButton function removed
 
 -- Statistics function
 function GetStatistics()
@@ -1751,7 +1638,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
             -- print("|cff00ff00AuberdineExporter:|r Base de données réinitialisée à PLAYER_LOGIN")
         end
         InitializeCharacterData()
-        CreateMinimapButton()
+        if AuberdineMinimapButton then
+            AuberdineMinimapButton:Initialize()
+        end
         
         -- MIGRATION v1.3.2: Remplacer "default" par un nom unique généré
         if AuberdineExporterDB.accountGroup == "default" or not AuberdineExporterDB.accountGroup then
@@ -1877,18 +1766,12 @@ local function HandleSlashCommand(msg)
             print("|cffff0000AuberdineExporter:|r Size function not available!")
         end
     elseif command == "minimap" then
-        if AuberdineExporterMinimapButton then
-            if AuberdineExporterMinimapButton:IsShown() then
-                AuberdineExporterMinimapButton:Hide()
-                if AuberdineExporterDB and AuberdineExporterDB.settings then
-                    AuberdineExporterDB.settings.minimapButtonHidden = true
-                end
+        if AuberdineMinimapButton and AuberdineMinimapButton.button then
+            if AuberdineMinimapButton.button:IsShown() then
+                AuberdineMinimapButton:SetVisibility(false)
                 print("|cff00ff00AuberdineExporter:|r Minimap button hidden")
             else
-                AuberdineExporterMinimapButton:Show()
-                if AuberdineExporterDB and AuberdineExporterDB.settings then
-                    AuberdineExporterDB.settings.minimapButtonHidden = false
-                end
+                AuberdineMinimapButton:SetVisibility(true)
                 print("|cff00ff00AuberdineExporter:|r Minimap button shown")
             end
         else
