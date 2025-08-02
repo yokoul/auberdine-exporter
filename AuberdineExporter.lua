@@ -738,7 +738,7 @@ function ExportToJSON()
     if not AuberdineExporterDB.accountGroup then
         AuberdineExporterDB.accountGroup = GenerateDefaultGroupName()
     end
-    exportMetadata.accountGroup = AuberdineExporterDB.accountGroup
+    -- NOTE: accountGroup retiré des métadonnées car chaque personnage peut avoir son propre groupe en v1.3.2
     
     -- Structure d'export multi-personnages
     local exportData = {

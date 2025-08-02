@@ -692,17 +692,27 @@ StaticPopupDialogs["AUBERDINE_EDIT_GROUP"] = {
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,
+    -- Forcer un niveau plus élevé pour passer devant la fenêtre de config
     OnShow = function(self, data)
-        self.editBox:SetText(data)
-        self.editBox:HighlightText()
+        -- Ajuster les niveaux d'affichage
+        self:SetFrameStrata("TOOLTIP")
+        self:SetFrameLevel(200)
+        
+        -- data est maintenant une table {charKey = "...", currentGroup = "..."}
+        if data and data.currentGroup then
+            self.editBox:SetText(data.currentGroup)
+            self.editBox:HighlightText()
+        else
+            self.editBox:SetText("")
+        end
     end,
     OnAccept = function(self, data)
         local newGroup = self.editBox:GetText()
-        if newGroup and newGroup ~= "" then
+        if newGroup and newGroup ~= "" and data and data.charKey then
             if SetAccountGroup then
-                SetAccountGroup(data, newGroup)
+                SetAccountGroup(data.charKey, newGroup)
                 print(string.format("|cff00ff00AuberdineExporter:|r Groupe de %s changé vers '%s'", 
-                    AuberdineExporterDB.characters[data] and AuberdineExporterDB.characters[data].name or data, newGroup))
+                    AuberdineExporterDB.characters[data.charKey] and AuberdineExporterDB.characters[data.charKey].name or data.charKey, newGroup))
                 -- Recharger l'interface
                 if AuberdineExporterUI.charConfigFrame then
                     AuberdineExporterUI.charConfigFrame:Hide()
@@ -738,6 +748,11 @@ StaticPopupDialogs["AUBERDINE_HELP_POPUP"] = {
     whileDead = true,
     hideOnEscape = true,
     preferredIndex = 3,
+    -- Forcer un niveau plus élevé pour passer devant la fenêtre de config
+    OnShow = function(self)
+        self:SetFrameStrata("TOOLTIP")
+        self:SetFrameLevel(200)
+    end,
 }
 
 -- Static popup for reset confirmation
@@ -783,7 +798,20 @@ StaticPopupDialogs["AUBERDINE_EXPORTER_CLEAR_CONFIRM"] = {
 
 -- NOUVEAU v1.3.2: Fenêtre de gestion des personnages
 function AuberdineExporterUI:ShowGroupEditPopup(charKey, currentGroup)
-    StaticPopup_Show("AUBERDINE_EDIT_GROUP", charKey, currentGroup)
+    -- Créer une table avec les données nécessaires
+    local popupData = {
+        charKey = charKey,
+        currentGroup = currentGroup or "Groupe-Auto"
+    }
+    
+    -- Obtenir le nom du personnage pour l'affichage
+    local charName = "Inconnu"
+    if AuberdineExporterDB and AuberdineExporterDB.characters and AuberdineExporterDB.characters[charKey] then
+        charName = AuberdineExporterDB.characters[charKey].name
+    end
+    
+    -- Afficher la popup avec le nom du personnage et le groupe actuel dans le texte
+    StaticPopup_Show("AUBERDINE_EDIT_GROUP", charName, popupData.currentGroup, popupData)
 end
 
 function AuberdineExporterUI:ShowHelpPopup()
@@ -857,7 +885,7 @@ function AuberdineExporterUI:ShowCharacterConfigFrame()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)
-    frame.title:SetText("Famille v1.3.2")
+    frame.title:SetText("Famille d'Auberdine v1.3.2")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -1224,62 +1252,50 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
     end
     
     -- Fonction pour dessiner des lignes de connexion entre personnages
-    local function DrawConnection(parent, fromCard, toCard, connectionType)
-        -- Vérifier que les cartes sont valides et positionnées
+    local function DrawConnection(parent, fromCard, toCard, connectionType, fromX, fromY, toX, toY)
+        -- Vérifier que les cartes sont valides
         if not fromCard or not toCard or not parent then
             return nil
         end
         
-        -- Attendre que les frames soient positionnés (vérification des positions)
-        local fromLeft = fromCard:GetLeft()
-        local fromTop = fromCard:GetTop()
-        local toLeft = toCard:GetLeft()
-        local toTop = toCard:GetTop()
-        local parentLeft = parent:GetLeft()
-        local parentTop = parent:GetTop()
+        -- Utiliser les positions passées en paramètre plutôt que GetLeft/GetTop
+        -- car ces méthodes ne fonctionnent que si les frames sont déjà rendus
         
-        -- Si une des positions est nil, ne pas dessiner de connexion
-        if not fromLeft or not fromTop or not toLeft or not toTop or not parentLeft or not parentTop then
-            return nil
-        end
+        -- Points de connexion (centre-bas de la carte source, centre-haut de la carte cible)
+        local fromConnectX = fromX + cardWidth/2
+        local fromConnectY = fromY - cardHeight
+        local toConnectX = toX + cardWidth/2
+        local toConnectY = toY
         
-        -- Créer une ligne verticale étirée en utilisant une texture de pixel
-        local line = parent:CreateTexture(nil, "ARTWORK")
-        line:SetColorTexture(0.7, 0.7, 0.7, 0.6)
-        
-        -- Calculer positions des cartes
-        local fromX = fromLeft - parentLeft + cardWidth/2
-        local fromY = -(fromTop - parentTop) - cardHeight
-        local toX = toLeft - parentLeft + cardWidth/2
-        local toY = -(toTop - parentTop)
-        
-        -- Ligne verticale de base (du bas de la carte source vers le niveau du destinataire)
-        local verticalHeight = math.abs(toY - fromY) - 20
-        if verticalHeight > 0 then
+        -- Ligne verticale principale (du bas de la source vers le niveau de la cible)
+        local verticalHeight = math.abs(toConnectY - fromConnectY) - 20
+        if verticalHeight > 5 then
+            local line = parent:CreateTexture(nil, "ARTWORK")
+            line:SetColorTexture(0.7, 0.7, 0.7, 0.8)
             line:SetSize(2, verticalHeight)
-            line:SetPoint("TOPLEFT", parent, "TOPLEFT", fromX - 1, fromY - 10)
+            line:SetPoint("TOPLEFT", parent, "TOPLEFT", fromConnectX - 1, fromConnectY - 10)
         end
         
-        -- Ligne horizontale si nécessaire
-        if math.abs(toX - fromX) > 5 then
+        -- Ligne horizontale si les cartes ne sont pas alignées verticalement
+        if math.abs(toConnectX - fromConnectX) > 5 then
             local horizontalLine = parent:CreateTexture(nil, "ARTWORK")
-            horizontalLine:SetColorTexture(0.7, 0.7, 0.7, 0.6)
-            horizontalLine:SetSize(math.abs(toX - fromX), 2)
+            horizontalLine:SetColorTexture(0.7, 0.7, 0.7, 0.8)
+            horizontalLine:SetSize(math.abs(toConnectX - fromConnectX), 2)
             
-            local startX = math.min(fromX, toX)
-            horizontalLine:SetPoint("TOPLEFT", parent, "TOPLEFT", startX, toY - 10)
+            local startX = math.min(fromConnectX, toConnectX)
+            horizontalLine:SetPoint("TOPLEFT", parent, "TOPLEFT", startX, toConnectY - 10)
             
             -- Ligne verticale finale vers la carte destinataire
             local finalVertical = parent:CreateTexture(nil, "ARTWORK")
-            finalVertical:SetColorTexture(0.7, 0.7, 0.7, 0.6)
+            finalVertical:SetColorTexture(0.7, 0.7, 0.7, 0.8)
             finalVertical:SetSize(2, 10)
-            finalVertical:SetPoint("TOPLEFT", parent, "TOPLEFT", toX - 1, toY - 10)
+            finalVertical:SetPoint("TOPLEFT", parent, "TOPLEFT", toConnectX - 1, toConnectY - 10)
         end
         
         -- Ajouter une flèche de direction
         local arrow = parent:CreateTexture(nil, "OVERLAY")
         arrow:SetSize(8, 8)
-        arrow:SetPoint("TOPLEFT", parent, "TOPLEFT", toX - 4, toY - 5)
+        arrow:SetPoint("TOPLEFT", parent, "TOPLEFT", toConnectX - 4, toConnectY - 5)
         
         -- Couleur selon le type de connexion
         if connectionType == "main-alt" then
@@ -1302,7 +1318,7 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         for i, charInfo in ipairs(mainCharacters) do
             local x = startX + (i - 1) * (cardWidth + cardSpacing)
             local card = CreateCharacterCard(content, charInfo, x, currentY)
-            placedCards[charInfo.key] = {card = card, info = charInfo, level = 1}
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 1, x = x, y = currentY}
             maxWidth = math.max(maxWidth, x + cardWidth)
         end
         currentY = currentY - cardHeight - levelSpacing
@@ -1314,7 +1330,7 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         for i, charInfo in ipairs(altCharacters) do
             local x = startX + (i - 1) * (cardWidth + cardSpacing)
             local card = CreateCharacterCard(content, charInfo, x, currentY)
-            placedCards[charInfo.key] = {card = card, info = charInfo, level = 2}
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 2, x = x, y = currentY}
             maxWidth = math.max(maxWidth, x + cardWidth)
         end
         currentY = currentY - cardHeight - levelSpacing
@@ -1326,7 +1342,7 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         for i, charInfo in ipairs(bankCharacters) do
             local x = startX + (i - 1) * (cardWidth + cardSpacing)
             local card = CreateCharacterCard(content, charInfo, x, currentY)
-            placedCards[charInfo.key] = {card = card, info = charInfo, level = 3}
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 3, x = x, y = currentY}
             maxWidth = math.max(maxWidth, x + cardWidth)
         end
         currentY = currentY - cardHeight - levelSpacing
@@ -1338,20 +1354,22 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         for i, charInfo in ipairs(unknownCharacters) do
             local x = startX + (i - 1) * (cardWidth + cardSpacing)
             local card = CreateCharacterCard(content, charInfo, x, currentY)
-            placedCards[charInfo.key] = {card = card, info = charInfo, level = 4}
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 4, x = x, y = currentY}
             maxWidth = math.max(maxWidth, x + cardWidth)
         end
         currentY = currentY - cardHeight - 20
     end
     
-    -- Créer les connexions visuelles entre niveaux avec un délai
-    -- pour permettre aux frames d'être complètement positionnés
+    -- Créer les connexions visuelles entre niveaux immédiatement
+    -- en utilisant les positions absolues stockées
     local function CreateConnections()
         -- Connexions Main -> Alt
         for _, mainChar in ipairs(mainCharacters) do
             for _, altChar in ipairs(altCharacters) do
-                if placedCards[mainChar.key] and placedCards[altChar.key] then
-                    DrawConnection(content, placedCards[mainChar.key].card, placedCards[altChar.key].card, "main-alt")
+                local fromCard = placedCards[mainChar.key]
+                local toCard = placedCards[altChar.key]
+                if fromCard and toCard then
+                    DrawConnection(content, fromCard.card, toCard.card, "main-alt", fromCard.x, fromCard.y, toCard.x, toCard.y)
                 end
             end
         end
@@ -1359,8 +1377,10 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         -- Connexions Alt -> Bank/Mule
         for _, altChar in ipairs(altCharacters) do
             for _, bankChar in ipairs(bankCharacters) do
-                if placedCards[altChar.key] and placedCards[bankChar.key] then
-                    DrawConnection(content, placedCards[altChar.key].card, placedCards[bankChar.key].card, "alt-bank")
+                local fromCard = placedCards[altChar.key]
+                local toCard = placedCards[bankChar.key]
+                if fromCard and toCard then
+                    DrawConnection(content, fromCard.card, toCard.card, "alt-bank", fromCard.x, fromCard.y, toCard.x, toCard.y)
                 end
             end
         end
@@ -1369,16 +1389,18 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         if #altCharacters == 0 then
             for _, mainChar in ipairs(mainCharacters) do
                 for _, bankChar in ipairs(bankCharacters) do
-                    if placedCards[mainChar.key] and placedCards[bankChar.key] then
-                        DrawConnection(content, placedCards[mainChar.key].card, placedCards[bankChar.key].card, "main-bank")
+                    local fromCard = placedCards[mainChar.key]
+                    local toCard = placedCards[bankChar.key]
+                    if fromCard and toCard then
+                        DrawConnection(content, fromCard.card, toCard.card, "main-bank", fromCard.x, fromCard.y, toCard.x, toCard.y)
                     end
                 end
             end
         end
     end
     
-    -- Retarder le dessin des connexions pour permettre le positionnement des frames
-    C_Timer.After(0.1, CreateConnections)
+    -- Appeler immédiatement la création des connexions
+    CreateConnections()
     
     -- Définir la taille du content pour le scroll
     content:SetHeight(math.abs(currentY) + 50)
