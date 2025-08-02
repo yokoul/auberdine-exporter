@@ -476,118 +476,20 @@ function AuberdineExporterUI:CreateCharacterConfigTab(parent)
     instructions:SetPoint("TOPLEFT", 10, -35)
     instructions:SetPoint("TOPRIGHT", -10, -35)
     instructions:SetJustifyH("LEFT")
-    instructions:SetText(
-        "Configurez vos personnages :\n" ..
-        "• Main : Personnage principal\n" ..
-        "• Alt : Personnage alternatif\n" ..
-        "• Bank : Personnage banque/stockage\n" ..
-        "• Mule : Personnage de transport"
-    )
+    instructions:SetText("Cliquez sur les cartes pour configurer vos personnages. Utilisez les boutons en bas pour les actions.")
     instructions:SetTextColor(0.8, 0.8, 0.8)
     
-    -- Section personnage actuel
-    local currentCharTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    currentCharTitle:SetPoint("TOPLEFT", 10, -120)
-    currentCharTitle:SetText("Personnage Actuel")
-    currentCharTitle:SetTextColor(0.5, 1, 0.5)
-    
-    local currentCharKey = GetCurrentCharacterKey and GetCurrentCharacterKey() or "Unknown"
-    local currentCharData = AuberdineExporterDB and AuberdineExporterDB.characters and AuberdineExporterDB.characters[currentCharKey]
-    
-    if currentCharData then
-        local charInfo = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        charInfo:SetPoint("TOPLEFT", 10, -145)
-        charInfo:SetText(string.format("%s (%s) - Niveau %d %s", 
-            currentCharData.name, currentCharData.realm,
-            currentCharData.level, currentCharData.class))
-        charInfo:SetTextColor(1, 1, 1)
-        
-        -- Configuration actuelle
-        local currentSettings = InitializeCharacterSettings and InitializeCharacterSettings(currentCharKey) or {}
-        local configInfo = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        configInfo:SetPoint("TOPLEFT", 10, -170)
-        configInfo:SetText(string.format("Type: %s | Groupe: %s | Export: %s", 
-            currentSettings.characterType or "main",
-            currentSettings.accountGroup or (AuberdineExporterDB.accountGroup or "Groupe-Auto"),
-            (currentSettings.exportEnabled ~= false) and "Activé" or "Désactivé"))
-        configInfo:SetTextColor(0.8, 0.8, 0.8)
-        
-        -- Boutons de configuration rapide
-        local yOffset = -200
-        
-        -- Type de personnage
-        local typeTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        typeTitle:SetPoint("TOPLEFT", 10, yOffset)
-        typeTitle:SetText("Type de personnage:")
-        typeTitle:SetTextColor(1, 0.8, 0)
-        
-        local typeButtons = {"Main", "Alt", "Bank", "Mule"}
-        for i, buttonType in ipairs(typeButtons) do
-            local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-            btn:SetPoint("TOPLEFT", 10 + (i-1) * 85, yOffset - 25)
-            btn:SetSize(80, 25)
-            btn:SetText(buttonType)
-            btn:SetScript("OnClick", function()
-                if SetCharacterType then
-                    SetCharacterType(currentCharKey, string.lower(buttonType))
-                    -- Refresh the display
-                    frame:GetParent():GetParent():UpdateContent()
-                end
-            end)
-        end
-        
-        yOffset = yOffset - 70
-        
-        -- Groupe de compte
-        local accountTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        accountTitle:SetPoint("TOPLEFT", 10, yOffset)
-        accountTitle:SetText("Groupe de compte:")
-        accountTitle:SetTextColor(1, 0.8, 0)
-        
-        local accountInput = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-        accountInput:SetPoint("TOPLEFT", 130, yOffset + 5)
-        accountInput:SetSize(150, 20)
-        accountInput:SetText(currentSettings.accountGroup or (AuberdineExporterDB.accountGroup or "Groupe-Auto"))
-        accountInput:SetAutoFocus(false)
-        
-        local setAccountBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        setAccountBtn:SetPoint("TOPLEFT", 290, yOffset)
-        setAccountBtn:SetSize(80, 25)
-        setAccountBtn:SetText("Définir")
-        setAccountBtn:SetScript("OnClick", function()
-            local groupName = accountInput:GetText()
-            if groupName and groupName ~= "" and SetAccountGroup then
-                SetAccountGroup(currentCharKey, groupName)
-                frame:GetParent():GetParent():UpdateContent()
-            end
-        end)
-        
-        yOffset = yOffset - 50
-        
-        -- Toggle export
-        local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        exportBtn:SetPoint("TOPLEFT", 10, yOffset)
-        exportBtn:SetSize(150, 25)
-        local exportStatus = (currentSettings.exportEnabled ~= false) and "Désactiver" or "Activer"
-        exportBtn:SetText(exportStatus .. " Export")
-        exportBtn:SetScript("OnClick", function()
-            if ToggleCharacterExport then
-                ToggleCharacterExport(currentCharKey)
-                frame:GetParent():GetParent():UpdateContent()
-            end
-        end)
-        
-        -- Bouton de configuration avancée
-        local configBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        configBtn:SetPoint("TOPLEFT", 170, yOffset)
-        configBtn:SetSize(150, 25)
-        configBtn:SetText("Liste Complète")
-        configBtn:SetScript("OnClick", function()
-            if ListCharacterConfiguration then
-                ListCharacterConfiguration()
-            end
-        end)
+    -- Schéma de tous les personnages
+    if not AuberdineExporterDB or not AuberdineExporterDB.characters then
+        local noDataText = scrollFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        noDataText:SetPoint("CENTER", scrollFrame, "CENTER", 0, 0)
+        noDataText:SetText("Aucune donnée de personnage disponible")
+        noDataText:SetTextColor(1, 0.5, 0.5)
+        return
     end
+    
+    -- Générer le schéma des cartes personnages dans scrollFrame
+    AuberdineExporterUI:GenerateCharacterCards(scrollFrame)
     
     return frame
 end
@@ -781,6 +683,43 @@ function AuberdineExporterUI:ShowExportFrame(exportType)
     AuberdineExportUI:ShowExportFrame(exportType)
 end
 
+-- Static popup pour éditer le groupe d'un personnage
+StaticPopupDialogs["AUBERDINE_EDIT_GROUP"] = {
+    text = "Changer le groupe de %s\nGroupe actuel: %s",
+    button1 = "Valider",
+    button2 = "Annuler",
+    hasEditBox = true,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    OnShow = function(self, data)
+        self.editBox:SetText(data)
+        self.editBox:HighlightText()
+    end,
+    OnAccept = function(self, data)
+        local newGroup = self.editBox:GetText()
+        if newGroup and newGroup ~= "" then
+            if SetAccountGroup then
+                SetAccountGroup(data, newGroup)
+                print(string.format("|cff00ff00AuberdineExporter:|r Groupe de %s changé vers '%s'", 
+                    AuberdineExporterDB.characters[data] and AuberdineExporterDB.characters[data].name or data, newGroup))
+                -- Recharger l'interface
+                if AuberdineExporterUI.charConfigFrame then
+                    AuberdineExporterUI.charConfigFrame:Hide()
+                    AuberdineExporterUI:ShowCharacterConfigFrame()
+                end
+            end
+        end
+    end,
+    EditBoxOnEnterPressed = function(self, data)
+        StaticPopup_OnClick(self:GetParent(), 1)
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    preferredIndex = 3,
+}
+
 -- Static popup pour l'aide
 StaticPopupDialogs["AUBERDINE_HELP_POPUP"] = {
     text = "AIDE - Configuration des Personnages\n\n" ..
@@ -843,6 +782,10 @@ StaticPopupDialogs["AUBERDINE_EXPORTER_CLEAR_CONFIRM"] = {
 }
 
 -- NOUVEAU v1.3.2: Fenêtre de gestion des personnages
+function AuberdineExporterUI:ShowGroupEditPopup(charKey, currentGroup)
+    StaticPopup_Show("AUBERDINE_EDIT_GROUP", charKey, currentGroup)
+end
+
 function AuberdineExporterUI:ShowHelpPopup()
     StaticPopup_Show("AUBERDINE_HELP_POPUP")
 end
@@ -938,164 +881,120 @@ end
 function AuberdineExporterUI:CreateCharacterConfigContent(frame)
     local yOffset = -40
     
-    -- Instructions principales
+    -- Titre principal seulement (libérer l'espace)
     local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     instructions:SetPoint("TOPLEFT", 20, yOffset)
-    instructions:SetText("Configuration des Types de Personnages")
+    instructions:SetText("Configuration des Personnages")
     instructions:SetTextColor(1, 1, 0)
     
-    -- Bouton Aide
-    local helpBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    helpBtn:SetPoint("TOPRIGHT", -90, yOffset - 5)
+    yOffset = yOffset - 35
+    
+    -- Zone de scroll MAXIMISÉE pour l'affichage graphique des cartes
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 20, yOffset)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -40, 130)  -- Beaucoup plus d'espace
+    
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    scrollFrame:SetScrollChild(content)
+    content:SetWidth(scrollFrame:GetWidth())
+    
+    -- Créer l'affichage graphique des personnages
+    self:CreateCharacterCardLayout(content, frame)
+    
+    -- SECTION INFOS/CONTRÔLES EN BAS (tout regroupé)
+    local bottomFrame = CreateFrame("Frame", nil, frame)
+    bottomFrame:SetPoint("BOTTOMLEFT", 20, 20)
+    bottomFrame:SetPoint("BOTTOMRIGHT", -20, 20)
+    bottomFrame:SetHeight(100)
+    
+    -- Background pour la section infos
+    bottomFrame.bg = bottomFrame:CreateTexture(nil, "BACKGROUND")
+    bottomFrame.bg:SetAllPoints()
+    bottomFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.4)
+    
+    -- Ligne de séparation
+    local separator = bottomFrame:CreateTexture(nil, "ARTWORK")
+    separator:SetPoint("TOPLEFT", 5, -5)
+    separator:SetPoint("TOPRIGHT", -5, -5)
+    separator:SetHeight(2)
+    separator:SetColorTexture(0.5, 0.5, 0.5, 1)
+    
+    -- PREMIÈRE LIGNE: Légende des couleurs
+    local legendText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    legendText:SetPoint("TOPLEFT", 10, -15)
+    legendText:SetText("Couleurs:")
+    legendText:SetTextColor(1, 1, 1)
+    
+    -- Échantillons de couleur compacts
+    local typeLabels = {
+        {type = "Main", color = {0.1, 0.4, 0.7}, x = 60},
+        {type = "Alt", color = {0.6, 0.3, 0.8}, x = 120},
+        {type = "Banque", color = {0.8, 0.6, 0.1}, x = 180},
+        {type = "Mule", color = {0.7, 0.4, 0.2}, x = 250}
+    }
+    
+    for _, typeInfo in ipairs(typeLabels) do
+        local colorSample = bottomFrame:CreateTexture(nil, "ARTWORK")
+        colorSample:SetSize(10, 10)
+        colorSample:SetPoint("TOPLEFT", typeInfo.x, -18)
+        colorSample:SetColorTexture(typeInfo.color[1], typeInfo.color[2], typeInfo.color[3], 1)
+        
+        local typeText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        typeText:SetPoint("TOPLEFT", typeInfo.x + 12, -15)
+        typeText:SetText(typeInfo.type)
+        typeText:SetTextColor(0.9, 0.9, 0.9)
+    end
+    
+    -- DEUXIÈME LIGNE: Clé de compte et infos
+    local accountKey = "AB-????-????"
+    if AuberdineExporter and AuberdineExporter.GetOrCreateAccountKey then
+        accountKey = AuberdineExporter:GetOrCreateAccountKey()
+    end
+    local accountKeyText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    accountKeyText:SetPoint("TOPLEFT", 10, -35)
+    accountKeyText:SetText("ID Compte: " .. accountKey)
+    accountKeyText:SetTextColor(0.7, 0.7, 0.7)
+    
+    -- Aide sur les connexions
+    local connectionText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    connectionText:SetPoint("TOPLEFT", 200, -35)
+    connectionText:SetText("Lignes = hiérarchie | Coin = export ON/OFF | Clic groupe = éditer")
+    connectionText:SetTextColor(0.7, 0.7, 0.7)
+    
+    -- TROISIÈME LIGNE: Boutons
+    local helpBtn = CreateFrame("Button", nil, bottomFrame, "UIPanelButtonTemplate")
+    helpBtn:SetPoint("TOPLEFT", 10, -55)
     helpBtn:SetSize(60, 25)
     helpBtn:SetText("Aide")
     helpBtn:SetScript("OnClick", function()
         AuberdineExporterUI:ShowHelpPopup()
     end)
     
-    -- Bouton Actualiser
-    local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    refreshBtn:SetPoint("TOPRIGHT", -20, yOffset - 5)
-    refreshBtn:SetSize(70, 25)
+    local refreshBtn = CreateFrame("Button", nil, bottomFrame, "UIPanelButtonTemplate")
+    refreshBtn:SetPoint("TOPLEFT", 80, -55)
+    refreshBtn:SetSize(80, 25)
     refreshBtn:SetText("Actualiser")
     refreshBtn:SetScript("OnClick", function()
-        frame:Hide()
+        -- Forcer la fermeture complète et recréation
+        if AuberdineExporterUI.charConfigFrame then
+            AuberdineExporterUI.charConfigFrame:Hide()
+            AuberdineExporterUI.charConfigFrame = nil
+        end
+        -- Force le rechargement immédiat
         AuberdineExporterUI:ShowCharacterConfigFrame()
+        print("Interface des personnages actualisée!")
     end)
     
-    yOffset = yOffset - 35
-    
-    -- Section de gestion du groupe global avec nom généré automatiquement
-    local groupSectionBg = frame:CreateTexture(nil, "BACKGROUND")
-    groupSectionBg:SetPoint("TOPLEFT", 10, yOffset + 5)
-    groupSectionBg:SetPoint("TOPRIGHT", -10, yOffset + 5)
-    groupSectionBg:SetHeight(80)
-    groupSectionBg:SetColorTexture(0.2, 0.2, 0.4, 0.3)
-    
-    -- S'assurer qu'il y a toujours un groupe généré automatiquement
-    if not AuberdineExporterDB.accountGroup then
-        if AuberdineExporter and AuberdineExporter.GenerateDefaultGroupName then
-            AuberdineExporterDB.accountGroup = AuberdineExporter:GenerateDefaultGroupName()
-        else
-            AuberdineExporterDB.accountGroup = "Groupe-" .. math.random(10, 99)
-        end
-    end
-    local currentGroupName = AuberdineExporterDB.accountGroup
-    -- Assurer que les fonctions sont disponibles avant appel
-    local accountKey = "AB-????-????"
-    if AuberdineExporter and AuberdineExporter.GetOrCreateAccountKey then
-        accountKey = AuberdineExporter:GetOrCreateAccountKey()
-    elseif GetOrCreateAccountKey then
-        accountKey = GetOrCreateAccountKey()
-    end
-    
-    local groupTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    groupTitle:SetPoint("TOPLEFT", 20, yOffset)
-    groupTitle:SetText("Configuration Groupe de Compte (Auto-généré)")
-    groupTitle:SetTextColor(0.5, 1, 0.5)
-    
-    local groupInfo = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    groupInfo:SetPoint("TOPLEFT", 20, yOffset - 20)
-    groupInfo:SetText(string.format("Nom de groupe: %s | Clé unique: %s", currentGroupName, accountKey))
-    groupInfo:SetTextColor(1, 1, 1)
-    
-    local groupHelp = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    groupHelp:SetPoint("TOPLEFT", 20, yOffset - 35)
-    groupHelp:SetText("Nom de groupe unique généré automatiquement")
-    groupHelp:SetTextColor(0.7, 0.7, 0.7)
-    
-    -- Champ pour nouveau nom de groupe
-    local newGroupInput = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-    newGroupInput:SetPoint("TOPLEFT", 20, yOffset - 55)
-    newGroupInput:SetSize(150, 20)
-    newGroupInput:SetText(currentGroupName)
-    newGroupInput:SetAutoFocus(false)
-    
-    -- Bouton pour appliquer à tous
-    local setAllGroupBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    setAllGroupBtn:SetPoint("TOPLEFT", 180, yOffset - 60)
-    setAllGroupBtn:SetSize(150, 25)
-    setAllGroupBtn:SetText("Appliquer à tous")
-    setAllGroupBtn:SetScript("OnClick", function()
-        local newGroupName = newGroupInput:GetText()
-        if newGroupName and newGroupName ~= "" then
-            -- Mettre à jour le groupe global
-            if not AuberdineExporterDB then AuberdineExporterDB = {} end
-            AuberdineExporterDB.accountGroup = newGroupName
-            
-            -- Appliquer à tous les personnages
-            if AuberdineExporterDB.characters then
-                for charKey, _ in pairs(AuberdineExporterDB.characters) do
-                    if SetAccountGroup then
-                        SetAccountGroup(charKey, newGroupName)
-                    end
-                end
-            end
-            
-            print(string.format("|cff00ff00AuberdineExporter:|r Groupe '%s' appliqué à tous les personnages", newGroupName))
-            frame:Hide()
-            AuberdineExporterUI:ShowCharacterConfigFrame()
+    local closeBtn = CreateFrame("Button", nil, bottomFrame, "UIPanelButtonTemplate")
+    closeBtn:SetPoint("TOPRIGHT", -10, -55)
+    closeBtn:SetSize(80, 25)
+    closeBtn:SetText("Fermer")
+    closeBtn:SetScript("OnClick", function()
+        frame:Hide()
+        if AuberdineExporterUI.mainFrame then
+            AuberdineExporterUI.mainFrame:Show()
         end
     end)
-    
-    -- Bouton pour générer un nouveau nom
-    local generateGroupBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    generateGroupBtn:SetPoint("TOPLEFT", 340, yOffset - 60)
-    generateGroupBtn:SetSize(120, 25)
-    generateGroupBtn:SetText("Nouveau nom")
-    generateGroupBtn:SetScript("OnClick", function()
-        local newName = "DefaultGroup-00" -- Fallback sécurisé
-        if AuberdineExporter and AuberdineExporter.GenerateDefaultGroupName then
-            newName = AuberdineExporter:GenerateDefaultGroupName()
-        elseif GenerateDefaultGroupName then
-            newName = GenerateDefaultGroupName()
-        end
-        if newName and newName ~= "" then
-            newGroupInput:SetText(newName)
-            print(string.format("|cff00ff00AuberdineExporter:|r Nouveau nom généré: %s", newName))
-        end
-    end)
-    
-    -- Bouton pour afficher la clé unique
-    local showKeyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    showKeyBtn:SetPoint("TOPLEFT", 470, yOffset - 60)
-    showKeyBtn:SetSize(120, 25)
-    showKeyBtn:SetText("Voir clé unique")
-    showKeyBtn:SetScript("OnClick", function()
-        local key = "AB-????-????" -- Fallback
-        if AuberdineExporter and AuberdineExporter.GetOrCreateAccountKey then
-            key = AuberdineExporter:GetOrCreateAccountKey()
-        elseif GetOrCreateAccountKey then
-            key = GetOrCreateAccountKey()
-        end
-        print(string.format("|cff00ff00AuberdineExporter:|r Votre clé d'identification unique: %s", key))
-        print("Utilisez '/auberdine accountkey' pour plus d'informations.")
-    end)
-    
-    yOffset = yOffset - 100
-    
-    -- Titre pour l'affichage graphique
-    local graphicTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    graphicTitle:SetPoint("TOPLEFT", 20, yOffset)
-    graphicTitle:SetText("Relations entre Personnages")
-    graphicTitle:SetTextColor(1, 1, 0)
-    
-    yOffset = yOffset - 25
-    
-    -- Légende des couleurs et connexions
-    local legendFrame = CreateFrame("Frame", nil, frame)
-    legendFrame:SetPoint("TOPLEFT", 20, yOffset)
-    legendFrame:SetSize(860, 35)
-    
-    -- Background de la légende
-    legendFrame.bg = legendFrame:CreateTexture(nil, "BACKGROUND")
-    legendFrame.bg:SetAllPoints()
-    legendFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.3)
-    
-    local legendText = legendFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    legendText:SetPoint("TOPLEFT", 10, -5)
-    legendText:SetText("Couleurs: ")
-    legendText:SetTextColor(1, 1, 1)
     
     -- Échantillons de couleur pour chaque type (nouvelles couleurs)
     local typeLabels = {
@@ -1172,56 +1071,19 @@ function AuberdineExporterUI:CreateCharacterConfigContent(frame)
     bottomSeparator:SetHeight(2)
     bottomSeparator:SetColorTexture(0.5, 0.5, 0.5, 1)
     
-    -- Bouton pour configurer tous en main
-    local allMainBtn = CreateFrame("Button", nil, globalActionsFrame, "UIPanelButtonTemplate")
-    allMainBtn:SetPoint("TOPLEFT", 0, 25)
-    allMainBtn:SetSize(120, 25)
-    allMainBtn:SetText("Tous en Main")
-    allMainBtn:SetScript("OnClick", function()
-        if AuberdineExporterDB and AuberdineExporterDB.characters then
-            for charKey, _ in pairs(AuberdineExporterDB.characters) do
-                if SetCharacterType then
-                    SetCharacterType(charKey, "main")
-                end
-            end
-            frame:Hide()
-            AuberdineExporterUI:ShowCharacterConfigFrame()
-            print("|cff00ff00AuberdineExporter:|r Tous les personnages définis comme 'main'")
+    -- Bouton Actualiser (puisque l'auto-refresh ne marche pas toujours)
+    local refreshBtn = CreateFrame("Button", nil, globalActionsFrame, "UIPanelButtonTemplate")
+    refreshBtn:SetPoint("TOPLEFT", 0, 25)
+    refreshBtn:SetSize(100, 25)
+    refreshBtn:SetText("Actualiser")
+    refreshBtn:SetScript("OnClick", function()
+        -- Forcer la fermeture complète et recréation
+        if AuberdineExporterUI.charConfigFrame then
+            AuberdineExporterUI.charConfigFrame:Hide()
+            AuberdineExporterUI.charConfigFrame = nil
         end
-    end)
-    
-    -- Bouton pour activer l'export pour tous
-    local enableAllBtn = CreateFrame("Button", nil, globalActionsFrame, "UIPanelButtonTemplate")
-    enableAllBtn:SetPoint("TOPLEFT", 130, 25)
-    enableAllBtn:SetSize(140, 25)
-    enableAllBtn:SetText("Activer tous exports")
-    enableAllBtn:SetScript("OnClick", function()
-        if AuberdineExporterDB and AuberdineExporterDB.characters then
-            for charKey, _ in pairs(AuberdineExporterDB.characters) do
-                if SetCharacterExportEnabled then
-                    SetCharacterExportEnabled(charKey, true)
-                elseif ToggleCharacterExport then
-                    local settings = InitializeCharacterSettings and InitializeCharacterSettings(charKey) or {}
-                    if settings.exportEnabled == false then
-                        ToggleCharacterExport(charKey)
-                    end
-                end
-            end
-            frame:Hide()
-            AuberdineExporterUI:ShowCharacterConfigFrame()
-            print("|cff00ff00AuberdineExporter:|r Export activé pour tous les personnages")
-        end
-    end)
-    
-    -- Bouton pour lister la config dans le chat
-    local listConfigBtn = CreateFrame("Button", nil, globalActionsFrame, "UIPanelButtonTemplate")
-    listConfigBtn:SetPoint("TOPLEFT", 280, 25)
-    listConfigBtn:SetSize(120, 25)
-    listConfigBtn:SetText("Liste dans Chat")
-    listConfigBtn:SetScript("OnClick", function()
-        if ListCharacterConfiguration then
-            ListCharacterConfiguration()
-        end
+        AuberdineExporterUI:ShowCharacterConfigFrame()
+        print("Interface des personnages actualisée!")
     end)
     
     -- Bouton de fermeture
@@ -1238,6 +1100,23 @@ function AuberdineExporterUI:CreateCharacterConfigContent(frame)
 end
 
 -- NOUVEAU: Fonction pour créer l'affichage graphique en cartes
+function AuberdineExporterUI:GenerateCharacterCards(scrollFrame)
+    -- Créer le content frame pour le scrollFrame
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    scrollFrame:SetScrollChild(content)
+    content:SetWidth(scrollFrame:GetWidth())
+    
+    -- Nettoyer le contenu existant
+    local children = {content:GetChildren()}
+    for _, child in pairs(children) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    
+    -- Appeler la fonction de génération des cartes existante
+    self:CreateCharacterCardLayout(content, scrollFrame:GetParent())
+end
+
 function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
     if not AuberdineExporterDB or not AuberdineExporterDB.characters then
         local noCharsText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -1347,12 +1226,25 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         card.detailsText:SetText(string.format("Niv %d %s", charInfo.data.level, charInfo.data.class))
         card.detailsText:SetTextColor(0.9, 0.9, 0.9)
         
-        -- Affichage du groupe
+        -- Affichage du groupe (cliquable pour éditer)
         card.groupText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         card.groupText:SetPoint("TOP", 0, -35)
         local groupName = charInfo.settings.accountGroup or (AuberdineExporterDB.accountGroup or "Groupe-Auto")
         card.groupText:SetText("Groupe: " .. groupName)
         card.groupText:SetTextColor(0.7, 0.7, 0.7)
+        
+        -- Bouton invisible pour éditer le groupe
+        card.groupBtn = CreateFrame("Button", nil, card)
+        card.groupBtn:SetAllPoints(card.groupText)
+        card.groupBtn:SetScript("OnClick", function()
+            AuberdineExporterUI:ShowGroupEditPopup(charInfo.key, groupName)
+        end)
+        card.groupBtn:SetScript("OnEnter", function()
+            card.groupText:SetTextColor(1, 1, 0.5) -- Jaune au survol
+        end)
+        card.groupBtn:SetScript("OnLeave", function()
+            card.groupText:SetTextColor(0.7, 0.7, 0.7) -- Retour normal
+        end)
         
         -- Dropdown pour le rôle (position ajustée)
         card.roleDropdown = CreateFrame("Frame", nil, card, "UIDropDownMenuTemplate")
