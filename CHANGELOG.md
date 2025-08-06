@@ -1,5 +1,22 @@
 # Changelog - AuberdineExporter
 
+## v1.3.2b (Août 2025) - Amélioration interface scrolling
+
+### 🆕 Nouvelles fonctionnalités
+
+#### 📜 Système de scroll bidirectionnel
+- **Scroll horizontal** : Navigation dans les cartes de personnages étendues
+- **Barres de scroll personnalisées** : Barres fines et élégantes pour vertical et horizontal
+- **Support molette** : Shift + molette pour scroll horizontal
+- **Interface cohérente** : Barres identiques pour une expérience utilisateur unifiée
+
+### 🎨 Améliorations UI
+- **Barres de scroll affinées** : Design plus moderne et discret
+- **Optimisation d'espace** : Plus de place pour les cartes de personnages
+- **Compatible Classic Era** : Solution native sans dépendances
+
+---
+
 ## v1.3.2 (Août 2025) - Gestion avancée des personnages
 
 ### 🆕 Nouvelles fonctionnalités

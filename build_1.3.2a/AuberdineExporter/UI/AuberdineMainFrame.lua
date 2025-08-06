@@ -92,7 +92,7 @@ function AuberdineExporterUI:CreateMainFrame()
         CreateExportFrame(csvData, "CSV")
     end)
     
-    -- NOUVEAU v1.3.2b: Bouton Gestion Personnages
+    -- NOUVEAU v1.3.2: Bouton Gestion Personnages
     local charConfigBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     charConfigBtn:SetPoint("TOPLEFT", 480, -50)
     charConfigBtn:SetSize(140, 25)
@@ -132,7 +132,7 @@ function AuberdineExporterUI:CreateMainFrame()
             local currentSettings = InitializeCharacterSettings and InitializeCharacterSettings(currentCharKey) or {}
             
             local text = string.format([[
-Auberdine Exporter v1.3.2b - Gestion avancée des personnages
+Auberdine Exporter v1.3.2 - Gestion avancée des personnages
 
 Personnages: %d
 Métiers: %d  
@@ -141,7 +141,7 @@ Total Recettes: %d
 Personnage Actuel: %s (%s)
 Type: %s | Groupe: %s | Export: %s
 
-NOUVEAU v1.3.2b:
+NOUVEAU v1.3.2:
 • Gestion des types de personnages (Main/Alt/Bank/Mule)
 • Organisation par groupes de comptes
 • Export sélectif des personnages
@@ -468,7 +468,7 @@ function AuberdineExporterUI:CreateCharacterConfigTab(parent)
     -- Titre
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 10, -10)
-    title:SetText("Gestion des Personnages (v1.3.2b)")
+    title:SetText("Gestion des Personnages (v1.3.2)")
     title:SetTextColor(1, 1, 0)
     
     -- Instructions
@@ -796,7 +796,7 @@ StaticPopupDialogs["AUBERDINE_EXPORTER_CLEAR_CONFIRM"] = {
     preferredIndex = 3,
 }
 
--- NOUVEAU v1.3.2b: Fenêtre de gestion des personnages
+-- NOUVEAU v1.3.2: Fenêtre de gestion des personnages
 function AuberdineExporterUI:ShowGroupEditPopup(charKey, currentGroup)
     -- Créer une table avec les données nécessaires
     local popupData = {
@@ -885,7 +885,7 @@ function AuberdineExporterUI:ShowCharacterConfigFrame()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)
-    frame.title:SetText("Famille d'Auberdine v1.3.2b")
+    frame.title:SetText("Famille d'Auberdine v1.3.2")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -918,220 +918,13 @@ function AuberdineExporterUI:CreateCharacterConfigContent(frame)
     yOffset = yOffset - 35
     
     -- Zone de scroll MAXIMISÉE pour l'affichage graphique des cartes
-    local scrollFrame = CreateFrame("ScrollFrame", nil, frame)  -- Supprimé le template pour faire nos propres barres
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 20, yOffset)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -40, 140)  -- Ajusté pour les barres plus fines
-    
-    -- Ajouter le support de la molette avec Shift pour horizontal
-    scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        if IsShiftKeyDown() then
-            -- Scroll horizontal avec Shift
-            local currentH = self:GetHorizontalScroll()
-            local maxScrollH = self:GetHorizontalScrollRange()
-            local newScrollH = math.max(0, math.min(maxScrollH, currentH - (delta * 50)))
-            self:SetHorizontalScroll(newScrollH)
-        else
-            -- Scroll vertical normal
-            local current = self:GetVerticalScroll()
-            local maxScroll = self:GetVerticalScrollRange()
-            local newScroll = math.max(0, math.min(maxScroll, current - (delta * 50)))
-            self:SetVerticalScroll(newScroll)
-        end
-    end)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -40, 130)  -- Beaucoup plus d'espace
     
     local content = CreateFrame("Frame", nil, scrollFrame)
     scrollFrame:SetScrollChild(content)
-    -- content:SetWidth(scrollFrame:GetWidth()) -- Supprimé pour permettre scroll horizontal
-    
-    -- BARRES DE SCROLL MANUELLES IDENTIQUES
-    
-    -- BARRE DE SCROLL VERTICALE MANUELLE
-    local vScrollBar = CreateFrame("Frame", nil, frame)
-    vScrollBar:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 16, 0)
-    vScrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 16, 20)
-    vScrollBar:SetWidth(12)  -- Plus fine
-    
-    -- Background de la barre verticale
-    vScrollBar.bg = vScrollBar:CreateTexture(nil, "BACKGROUND")
-    vScrollBar.bg:SetAllPoints()
-    vScrollBar.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-    
-    -- Curseur de la barre verticale
-    vScrollBar.thumb = CreateFrame("Button", nil, vScrollBar)
-    vScrollBar.thumb:SetWidth(10)  -- Plus fin
-    vScrollBar.thumb:SetHeight(30)  -- Légèrement plus petit
-    vScrollBar.thumb:SetPoint("TOP", 0, -1)
-    
-    vScrollBar.thumb.bg = vScrollBar.thumb:CreateTexture(nil, "ARTWORK")
-    vScrollBar.thumb.bg:SetAllPoints()
-    vScrollBar.thumb.bg:SetColorTexture(0.6, 0.6, 0.6, 1)
-    
-    vScrollBar.thumb.bgHighlight = vScrollBar.thumb:CreateTexture(nil, "HIGHLIGHT")
-    vScrollBar.thumb.bgHighlight:SetAllPoints()
-    vScrollBar.thumb.bgHighlight:SetColorTexture(0.8, 0.8, 0.8, 1)
-    
-    -- Fonction de mise à jour du scroll vertical
-    local function UpdateVerticalScrollBar()
-        local maxScroll = scrollFrame:GetVerticalScrollRange()
-        local currentScroll = scrollFrame:GetVerticalScroll()
-        
-        if maxScroll > 0 then
-            vScrollBar:Show()
-            local barHeight = vScrollBar:GetHeight() - 2
-            local thumbHeight = math.max(20, barHeight * (scrollFrame:GetHeight() / (scrollFrame:GetHeight() + maxScroll)))
-            local thumbPos = (currentScroll / maxScroll) * (barHeight - thumbHeight)
-            
-            vScrollBar.thumb:SetHeight(thumbHeight)
-            vScrollBar.thumb:SetPoint("TOP", 0, -1 - thumbPos)
-        else
-            vScrollBar:Hide()
-        end
-    end
-    
-    -- Drag du curseur vertical
-    vScrollBar.thumb:EnableMouse(true)
-    vScrollBar.thumb:RegisterForDrag("LeftButton")
-    vScrollBar.thumb:SetScript("OnDragStart", function(self)
-        self.isDragging = true
-        self.startY = select(2, GetCursorPosition())
-        self.startScroll = scrollFrame:GetVerticalScroll()
-    end)
-    
-    vScrollBar.thumb:SetScript("OnDragStop", function(self)
-        self.isDragging = false
-    end)
-    
-    vScrollBar.thumb:SetScript("OnUpdate", function(self)
-        if self.isDragging then
-            local currentY = select(2, GetCursorPosition())
-            local deltaY = self.startY - currentY  -- Inversé pour WoW
-            local barHeight = vScrollBar:GetHeight() - 2
-            local maxScroll = scrollFrame:GetVerticalScrollRange()
-            
-            if maxScroll > 0 then
-                local thumbHeight = vScrollBar.thumb:GetHeight()
-                local scrollDelta = (deltaY / (barHeight - thumbHeight)) * maxScroll
-                local newScroll = math.max(0, math.min(maxScroll, self.startScroll + scrollDelta))
-                scrollFrame:SetVerticalScroll(newScroll)
-                UpdateVerticalScrollBar()
-            end
-        end
-    end)
-    
-    -- Clic sur la barre verticale pour sauter à une position
-    vScrollBar:EnableMouse(true)
-    vScrollBar:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            local cursorY = select(2, GetCursorPosition())
-            local barTop = self:GetTop() * self:GetEffectiveScale()
-            local barHeight = self:GetHeight() * self:GetEffectiveScale()
-            local clickPos = (barTop - cursorY) / barHeight
-            
-            local maxScroll = scrollFrame:GetVerticalScrollRange()
-            local newScroll = math.max(0, math.min(maxScroll, clickPos * maxScroll))
-            scrollFrame:SetVerticalScroll(newScroll)
-            UpdateVerticalScrollBar()
-        end
-    end)
-    
-    -- BARRE DE SCROLL HORIZONTALE MANUELLE
-    -- Créer la barre de scroll horizontale
-    local hScrollBar = CreateFrame("Frame", nil, frame)
-    hScrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMLEFT", 0, -16)
-    hScrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", -16, -16)
-    hScrollBar:SetHeight(12)  -- Plus fine
-    
-    -- Background de la barre
-    hScrollBar.bg = hScrollBar:CreateTexture(nil, "BACKGROUND")
-    hScrollBar.bg:SetAllPoints()
-    hScrollBar.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-    
-    -- Curseur de la barre
-    hScrollBar.thumb = CreateFrame("Button", nil, hScrollBar)
-    hScrollBar.thumb:SetHeight(10)  -- Plus fin
-    hScrollBar.thumb:SetWidth(30)   -- Légèrement plus petit
-    hScrollBar.thumb:SetPoint("LEFT", 1, 0)
-    
-    hScrollBar.thumb.bg = hScrollBar.thumb:CreateTexture(nil, "ARTWORK")
-    hScrollBar.thumb.bg:SetAllPoints()
-    hScrollBar.thumb.bg:SetColorTexture(0.6, 0.6, 0.6, 1)
-    
-    hScrollBar.thumb.bgHighlight = hScrollBar.thumb:CreateTexture(nil, "HIGHLIGHT")
-    hScrollBar.thumb.bgHighlight:SetAllPoints()
-    hScrollBar.thumb.bgHighlight:SetColorTexture(0.8, 0.8, 0.8, 1)
-    
-    -- Fonction de mise à jour du scroll horizontal
-    local function UpdateHorizontalScrollBar()
-        local maxScroll = scrollFrame:GetHorizontalScrollRange()
-        local currentScroll = scrollFrame:GetHorizontalScroll()
-        
-        if maxScroll > 0 then
-            hScrollBar:Show()
-            local barWidth = hScrollBar:GetWidth() - 2
-            local thumbWidth = math.max(20, barWidth * (scrollFrame:GetWidth() / (scrollFrame:GetWidth() + maxScroll)))
-            local thumbPos = (currentScroll / maxScroll) * (barWidth - thumbWidth)
-            
-            hScrollBar.thumb:SetWidth(thumbWidth)
-            hScrollBar.thumb:SetPoint("LEFT", 1 + thumbPos, 0)
-        else
-            hScrollBar:Hide()
-        end
-    end
-    
-    -- Drag du curseur horizontal
-    hScrollBar.thumb:EnableMouse(true)
-    hScrollBar.thumb:RegisterForDrag("LeftButton")
-    hScrollBar.thumb:SetScript("OnDragStart", function(self)
-        self.isDragging = true
-        self.startX = GetCursorPosition()
-        self.startScroll = scrollFrame:GetHorizontalScroll()
-    end)
-    
-    hScrollBar.thumb:SetScript("OnDragStop", function(self)
-        self.isDragging = false
-    end)
-    
-    hScrollBar.thumb:SetScript("OnUpdate", function(self)
-        if self.isDragging then
-            local currentX = GetCursorPosition()
-            local deltaX = currentX - self.startX
-            local barWidth = hScrollBar:GetWidth() - 2
-            local maxScroll = scrollFrame:GetHorizontalScrollRange()
-            
-            if maxScroll > 0 then
-                local thumbWidth = hScrollBar.thumb:GetWidth()
-                local scrollDelta = (deltaX / (barWidth - thumbWidth)) * maxScroll
-                local newScroll = math.max(0, math.min(maxScroll, self.startScroll + scrollDelta))
-                scrollFrame:SetHorizontalScroll(newScroll)
-                UpdateHorizontalScrollBar()
-            end
-        end
-    end)
-    
-    -- Clic sur la barre pour sauter à une position
-    hScrollBar:EnableMouse(true)
-    hScrollBar:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            local cursorX = GetCursorPosition()
-            local barLeft = self:GetLeft() * self:GetEffectiveScale()
-            local barWidth = self:GetWidth() * self:GetEffectiveScale()
-            local clickPos = (cursorX - barLeft) / barWidth
-            
-            local maxScroll = scrollFrame:GetHorizontalScrollRange()
-            local newScroll = math.max(0, math.min(maxScroll, clickPos * maxScroll))
-            scrollFrame:SetHorizontalScroll(newScroll)
-            UpdateHorizontalScrollBar()
-        end
-    end)
-    
-    -- Mettre à jour les barres quand le contenu change
-    scrollFrame:SetScript("OnScrollRangeChanged", function()
-        UpdateVerticalScrollBar()
-        UpdateHorizontalScrollBar()
-    end)
-    scrollFrame:SetScript("OnVerticalScroll", UpdateVerticalScrollBar)
-    scrollFrame:SetScript("OnHorizontalScroll", UpdateHorizontalScrollBar)
+    content:SetWidth(scrollFrame:GetWidth())
     
     -- Créer l'affichage graphique des personnages
     self:CreateCharacterCardLayout(content, frame)

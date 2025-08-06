@@ -299,13 +299,6 @@ function GetStatistics()
     return stats
 end
 
--- Fonction pour récupérer la version depuis le fichier .toc
-local function GetAddonVersion()
-    local addonName = "AuberdineExporter"
-    local version = GetAddOnMetadata(addonName, "Version")
-    return version or "1.3.2b" -- Fallback au cas où la lecture échoue
-end
-
 -- Clé client publique pour auberdine.eu
 AuberdineExporterClientKey = "auberdine-v1"
 
@@ -364,66 +357,9 @@ local function GetOrCreateAccountKey()
     return AuberdineExporterDB.accountKey
 end
 
--- Valider le format d'une accountKey
-local function IsValidAccountKey(key)
-    if not key or type(key) ~= "string" then
-        return false
-    end
-    -- Format: AB-XXXX-YYYY où X et Y sont A-Z ou 0-9
-    local pattern = "^AB%-[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]%-[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]$"
-    local match = string.match(key, pattern)
-    
-    -- Debug pour comprendre le problème
-    if not match then
-        print("|cffff8000DEBUG:|r Validation échouée pour: '" .. key .. "'")
-        print("  Longueur: " .. string.len(key))
-        print("  Pattern attendu: AB-XXXX-YYYY")
-        
-        -- Vérifications détaillées
-        if string.len(key) ~= 11 then
-            print("  Erreur: Longueur incorrecte (attendu: 11, reçu: " .. string.len(key) .. ")")
-        end
-        if string.sub(key, 1, 3) ~= "AB-" then
-            print("  Erreur: Préfixe incorrect (attendu: 'AB-', reçu: '" .. string.sub(key, 1, 3) .. "')")
-        end
-        if string.sub(key, 7, 7) ~= "-" then
-            print("  Erreur: Séparateur manquant position 7 (attendu: '-', reçu: '" .. string.sub(key, 7, 7) .. "')")
-        end
-    end
-    
-    return match ~= nil
-end
-
--- Définir manuellement une accountKey (pour lier des comptes)
-local function SetAccountKey(newKey)
-    if not IsValidAccountKey(newKey) then
-        return false, "Format invalide. Utilisez le format AB-XXXX-YYYY (ex: AB-1054-YFNJ)"
-    end
-    
-    local oldKey = AuberdineExporterDB.accountKey
-    AuberdineExporterDB.accountKey = newKey
-    
-    print("|cff00ff00AuberdineExporter:|r AccountKey mise à jour !")
-    if oldKey then
-        print("  Ancienne clé: |cffffffff" .. oldKey .. "|r")
-    end
-    print("  Nouvelle clé: |cffffffff" .. newKey .. "|r")
-    print("|cffff8000Important:|r Cette modification prendra effet au prochain export.")
-    
-    return true, "AccountKey définie avec succès"
-end
-
 -- Exposer les fonctions dans l'objet global pour l'interface
 function AuberdineExporter:GetOrCreateAccountKey()
     return GetOrCreateAccountKey()
-end
-
-function AuberdineExporter:SetAccountKey(newKey)
-    return SetAccountKey(newKey)
-end
-
-function AuberdineExporter:IsValidAccountKey(key)
-    return IsValidAccountKey(key)
 end
 
 function AuberdineExporter:GenerateDefaultGroupName()
@@ -669,7 +605,7 @@ function ExportToJSON()
     -- Métadonnées système pour auberdine.eu
     local exportMetadata = {
         addon = "AuberdineExporter",
-        version = AuberdineExporterDB.version or GetAddonVersion(),
+        version = AuberdineExporterDB.version or "1.3.2",
         timestamp = time(),
         exportDate = date("%Y-%m-%d %H:%M:%S"),
         clientKey = AuberdineExporterClientKey,
@@ -1079,7 +1015,7 @@ function ExportToSimpleJSON()
     local exportData = {
         timestamp = time(),
         addon = "AuberdineExporter",
-        version = AuberdineExporterDB.version or GetAddonVersion(),
+        version = AuberdineExporterDB.version or "1.0.0",
         character = character,
         recipes = recipes,
         skills = freshSkills,
@@ -1658,7 +1594,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if addonName == "AuberdineExporter" then
             if not AuberdineExporterDB then
                 AuberdineExporterDB = {
-                    version = GetAddonVersion(),
+                    version = "1.3.2",
                     characters = {},
                     settings = {
                         autoScan = true,
@@ -1675,12 +1611,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 }
                 -- Database initialization message disabled for cleaner experience
                 -- print("|cff00ff00AuberdineExporter:|r Base de données initialisée à ADDON_LOADED")
-            else
-                -- MIGRATION: Forcer la mise à jour de la version si elle est ancienne
-                local currentVersion = GetAddonVersion()
-                if not AuberdineExporterDB.version or AuberdineExporterDB.version ~= currentVersion then
-                    AuberdineExporterDB.version = currentVersion
-                end
             end
             -- Startup message reduced to essential information only
             -- print("|cff00ff00AuberdineExporter|r v" .. AuberdineExporterDB.version .. " chargé !")
@@ -1689,7 +1619,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         -- S'assurer que la base de données principale est complètement initialisée
         if not AuberdineExporterDB then
             AuberdineExporterDB = {
-                version = GetAddonVersion(),
+                version = "1.3.2",
                 characters = {},
                 settings = {
                     autoScan = true,
@@ -1706,12 +1636,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
             }
             -- Database re-initialization message disabled for cleaner experience
             -- print("|cff00ff00AuberdineExporter:|r Base de données réinitialisée à PLAYER_LOGIN")
-        else
-            -- MIGRATION: Forcer la mise à jour de la version si elle est ancienne
-            local currentVersion = GetAddonVersion()
-            if not AuberdineExporterDB.version or AuberdineExporterDB.version ~= currentVersion then
-                AuberdineExporterDB.version = currentVersion
-            end
         end
         InitializeCharacterData()
         if AuberdineMinimapButton then
@@ -1979,52 +1903,11 @@ local function HandleSlashCommand(msg)
         ListCharacterConfiguration()
         
     elseif command == "accountkey" then
-        -- /auberdine accountkey [nouvelle_clé] - Affiche ou définit la clé d'identification unique du compte
-        local newKey = args[2]
-        
-        if newKey then
-            -- Définir une nouvelle accountKey
-            local success, message = SetAccountKey(string.upper(newKey))
-            if not success then
-                print("|cffff0000AuberdineExporter:|r " .. message)
-                print("Exemple de format valide: AB-1234-ABCD")
-            end
-        else
-            -- Afficher l'accountKey actuelle
-            local accountKey = GetOrCreateAccountKey()
-            print("|cff00ff00AuberdineExporter:|r Clé d'identification unique: |cffffffff" .. accountKey .. "|r")
-            print("Cette clé permet de lier vos comptes WoW dans le système de groupes.")
-            print("Partagez cette clé avec vos autres comptes pour les regrouper.")
-            print("|cffff8000Usage:|r /auberdine accountkey <nouvelle_clé> pour changer la clé")
-        end
-        
-    elseif command == "generatekey" then
-        -- /auberdine generatekey - Génère une nouvelle accountKey aléatoire
-        local newKey = GenerateUniqueAccountKey()
-        print("|cff00ff00AuberdineExporter:|r Nouvelle clé générée: |cffffffff" .. newKey .. "|r")
-        print("Utilisez '/auberdine accountkey " .. newKey .. "' pour l'appliquer.")
-        print("Ou copiez cette clé pour la partager avec vos autres comptes.")
-        print("|cffff8000Exemple d'usage multi-comptes:|r")
-        print("  1. Sur le compte principal: /auberdine generatekey")
-        print("  2. Copiez la clé générée")  
-        print("  3. Sur les autres comptes: /auberdine accountkey " .. newKey)
-        
-    elseif command == "testkey" then
-        -- /auberdine testkey <clé> - Teste la validation d'une clé
-        local testKey = args[2]
-        if not testKey then
-            print("|cffff0000AuberdineExporter:|r Usage: /auberdine testkey <clé_à_tester>")
-            print("Exemple: /auberdine testkey AB-9KR8-2HYC")
-            return
-        end
-        
-        print("|cff00ff00AuberdineExporter:|r Test de validation pour: " .. testKey)
-        local isValid = IsValidAccountKey(testKey)
-        if isValid then
-            print("|cff00ff00Résultat:|r Clé VALIDE ✓")
-        else
-            print("|cffff0000Résultat:|r Clé INVALIDE ✗")
-        end
+        -- /auberdine accountkey - Affiche la clé d'identification unique du compte
+        local accountKey = GetOrCreateAccountKey()
+        print("|cff00ff00AuberdineExporter:|r Clé d'identification unique: |cffffffff" .. accountKey .. "|r")
+        print("Cette clé permet de lier vos comptes WoW dans le système de groupes.")
+        print("Partagez cette clé avec vos autres comptes pour les regrouper.")
         
     elseif command == "groupname" then
         -- /auberdine groupname [newName] - Affiche ou change le nom du groupe
@@ -2080,8 +1963,7 @@ local function HandleSlashCommand(msg)
         print("  /auberdine export <enable|disable> - Activer/désactiver l'export")
         print("")
         print("|cffff8000=== GESTION DES GROUPES MULTI-COMPTES ===|r")
-        print("  /auberdine accountkey [nouvelle_clé] - Afficher ou définir votre clé d'identification unique")
-        print("  /auberdine generatekey - Générer une nouvelle clé aléatoire")
+        print("  /auberdine accountkey - Afficher votre clé d'identification unique")
         print("  /auberdine groupname [nom] - Afficher/changer le nom de votre groupe")
         print("    Exemples: DragonRouge-42, CarnAlliance, MesPersonnages")
         print("")
