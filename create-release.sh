@@ -3,7 +3,7 @@
 # Script de création du ZIP de release pour CurseForge
 # Usage: ./create-release.sh
 
-VERSION="1.3.2b"
+VERSION="1.3.3"
 ADDON_NAME="AuberdineExporter"
 BUILD_DIR="build"
 RELEASE_DIR="$BUILD_DIR/$ADDON_NAME"
