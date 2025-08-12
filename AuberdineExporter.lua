@@ -1140,20 +1140,17 @@ end
 
 -- Export CSV simple pour auberdine.eu
 function ExportToCSV()
-    local csv = "Character,Realm,Level,Race,Class,Profession,ProfessionLevel,RecipeID,RecipeName,RecipeType,SpellLink\n"
+    local csv = "Character,Realm,Level,Race,Class,Profession,ProfessionLevel,RecipeName\n"
     for charKey, charData in pairs(AuberdineExporterDB.characters) do
         for profName, profData in pairs(charData.professions or {}) do
             local recipes = profData.recipes or {}
             for recipeKey, recipeData in pairs(recipes) do
-                local recipeID = recipeData.id or "N/A"
                 local recipeName = recipeData.name or recipeKey
-                local spellLink = recipeData.spellLink or "N/A"
                 csv = csv .. string.format(
-                    '"%s","%s",%d,"%s","%s","%s",%d,"%s","%s","%s","%s"\n',
+                    '"%s","%s",%d,"%s","%s","%s",%d,"%s"\n',
                     charData.name, charData.realm, charData.level,
                     charData.race, charData.class, profName,
-                    profData.level or 0, tostring(recipeID), recipeName, 
-                    recipeData.type or "unknown", spellLink
+                    profData.level or 0, recipeName
                 )
             end
         end
