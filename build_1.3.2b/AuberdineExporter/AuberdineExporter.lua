@@ -1297,7 +1297,7 @@ local function CreateMainFrame()
     scrollFrame:SetScrollChild(frame.content)
     
     -- Update content function
-    frame.UpdateContent = function()
+    frame.UpdateContent = function(self)
         local stats = GetStatistics()
         local currentChar = GetCurrentCharacterKey()
         local currentCharData = AuberdineExporterDB.characters[currentChar]
@@ -1353,7 +1353,7 @@ local function CreateMainFrame()
             end
         end
         
-        frame.content:SetText(text)
+        self.content:SetText(text)
     end
     
     mainFrame = frame

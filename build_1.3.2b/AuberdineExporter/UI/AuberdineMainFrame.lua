@@ -11,9 +11,9 @@ function AuberdineExporterUI:CreateMainFrame()
         return self.mainFrame
     end
     
-    -- Create main frame - Plus large pour accueillir la vue des personnages
+    -- Create main frame
     local frame = CreateFrame("Frame", "AuberdineExporterMainFrame", UIParent)
-    frame:SetSize(1000, 700)  -- Agrandi pour la nouvelle layout
+    frame:SetSize(650, 500)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -55,7 +55,7 @@ function AuberdineExporterUI:CreateMainFrame()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)  -- Adjusted for icon
-    frame.title:SetText("Famille d'Auberdine v1.3.3 - Interface Unifiée")
+    frame.title:SetText("Auberdine Exporter")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -63,421 +63,141 @@ function AuberdineExporterUI:CreateMainFrame()
     frame.closeBtn:SetPoint("TOPRIGHT", -5, -5)
     frame.closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
-    -- SIDEBAR GAUCHE POUR LES BOUTONS (remplace les boutons horizontaux)
-    frame.sidebar = CreateFrame("Frame", nil, frame)
-    frame.sidebar:SetPoint("TOPLEFT", 10, -35)
-    frame.sidebar:SetSize(180, 650)  -- Barre verticale
-    
-    -- Background de la sidebar
-    frame.sidebar.bg = frame.sidebar:CreateTexture(nil, "BACKGROUND")
-    frame.sidebar.bg:SetAllPoints()
-    frame.sidebar.bg:SetColorTexture(0.1, 0.1, 0.1, 0.6)
-    
-    -- Titre de la sidebar
-    frame.sidebar.title = frame.sidebar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    frame.sidebar.title:SetPoint("TOP", 0, -10)
-    frame.sidebar.title:SetText("Actions")
-    frame.sidebar.title:SetTextColor(1, 1, 0)
-    
-    -- Export Auberdine button (vertical)
-    local exportBtn = CreateFrame("Button", nil, frame.sidebar, "UIPanelButtonTemplate")
-    exportBtn:SetPoint("TOP", 0, -35)
-    exportBtn:SetSize(160, 30)
+    -- Export Auberdine button
+    local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    exportBtn:SetPoint("TOPLEFT", 30, -50)
+    exportBtn:SetSize(140, 25)
     exportBtn:SetText("Export Auberdine")
     exportBtn:SetScript("OnClick", function()
         local jsonData = ExportToJSON()
         CreateExportFrame(jsonData, "Auberdine")
     end)
     
+    -- Clear Cache button
+    local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    clearBtn:SetPoint("TOPLEFT", 180, -50)
+    clearBtn:SetSize(140, 25)
+    clearBtn:SetText("Supprimer Cache")
+    clearBtn:SetScript("OnClick", function()
+        StaticPopup_Show("AUBERDINE_EXPORTER_RESET_CONFIRM")
+    end)
+
     -- Export CSV button
-    local csvBtn = CreateFrame("Button", nil, frame.sidebar, "UIPanelButtonTemplate")
-    csvBtn:SetPoint("TOP", 0, -75)
-    csvBtn:SetSize(160, 30)
+    local csvBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    csvBtn:SetPoint("TOPLEFT", 330, -50)
+    csvBtn:SetSize(140, 25)
     csvBtn:SetText("Export CSV")
     csvBtn:SetScript("OnClick", function()
         local csvData = ExportToCSV()
         CreateExportFrame(csvData, "CSV")
     end)
     
-    -- Clear Cache button
-    local clearBtn = CreateFrame("Button", nil, frame.sidebar, "UIPanelButtonTemplate")
-    clearBtn:SetPoint("TOP", 0, -115)
-    clearBtn:SetSize(160, 30)
-    clearBtn:SetText("Supprimer Cache")
-    clearBtn:SetScript("OnClick", function()
-        StaticPopup_Show("AUBERDINE_EXPORTER_RESET_CONFIRM")
+    -- NOUVEAU v1.3.2b: Bouton Gestion Personnages
+    local charConfigBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    charConfigBtn:SetPoint("TOPLEFT", 480, -50)
+    charConfigBtn:SetSize(140, 25)
+    charConfigBtn:SetText("Gestion Personnages")
+    charConfigBtn:SetScript("OnClick", function()
+        AuberdineExporterUI:ShowCharacterConfigFrame()
     end)
     
-    -- Bouton Actualiser personnages
-    local refreshBtn = CreateFrame("Button", nil, frame.sidebar, "UIPanelButtonTemplate")
-    refreshBtn:SetPoint("TOP", 0, -155)
-    refreshBtn:SetSize(160, 30)
-    refreshBtn:SetText("Actualiser Vue")
-    refreshBtn:SetScript("OnClick", function()
-        AuberdineExporterUI:RefreshCharacterView(frame)
-    end)
+    -- Content area
+    frame.content = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    frame.content:SetPoint("TOPLEFT", 10, -85)
+    frame.content:SetPoint("BOTTOMRIGHT", -30, 10)
     
-    -- Bouton Aide
-    local helpBtn = CreateFrame("Button", nil, frame.sidebar, "UIPanelButtonTemplate")
-    helpBtn:SetPoint("TOP", 0, -195)
-    helpBtn:SetSize(160, 30)
-    helpBtn:SetText("Aide")
-    helpBtn:SetScript("OnClick", function()
-        AuberdineExporterUI:ShowHelpPopup()
-    end)
+    -- Background icon for content area
+    frame.contentBg = frame.content:CreateTexture(nil, "BACKGROUND")
+    frame.contentBg:SetSize(256, 256)
+    frame.contentBg:SetPoint("CENTER", frame.content, "CENTER", 0, 0)
+    frame.contentBg:SetTexture("Interface\\AddOns\\AuberdineExporter\\UI\\Icons\\ab256.png")
+    frame.contentBg:SetAlpha(0.1) -- Semi-transparent pour ne pas gêner la lecture
+    frame.contentBg:SetDesaturated(true) -- Désaturé pour être plus discret
     
-    -- ZONE PRINCIPALE POUR LA VUE DES PERSONNAGES
-    frame.mainContent = CreateFrame("Frame", nil, frame)
-    frame.mainContent:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 10, 0)
-    frame.mainContent:SetPoint("BOTTOMRIGHT", -10, 10)
+    -- Text content
+    frame.textContent = CreateFrame("EditBox", nil, frame.content)
+    frame.textContent:SetMultiLine(true)
+    frame.textContent:SetFontObject("GameFontNormal")
+    frame.textContent:SetWidth(550)
+    frame.textContent:SetAutoFocus(false)
+    frame.textContent:EnableMouse(false)
+    frame.content:SetScrollChild(frame.textContent)
     
-    -- Background de la zone principale
-    frame.mainContent.bg = frame.mainContent:CreateTexture(nil, "BACKGROUND")
-    frame.mainContent.bg:SetAllPoints()
-    frame.mainContent.bg:SetColorTexture(0.05, 0.05, 0.05, 0.4)
-    
-    -- Initialiser la vue des personnages
-    self:CreateUnifiedCharacterView(frame.mainContent)
-    
-    -- Update content function (pour compatibilité)
+    -- Update content function
     frame.UpdateContent = function()
-        -- Actualiser la vue des personnages
-        self:RefreshCharacterView(frame)
+        if GetStatistics and AuberdineExporterDB then
+            local stats = GetStatistics()
+            local currentCharKey = GetCurrentCharacterKey and GetCurrentCharacterKey() or "Unknown"
+            local currentCharData = AuberdineExporterDB.characters and AuberdineExporterDB.characters[currentCharKey]
+            local currentSettings = InitializeCharacterSettings and InitializeCharacterSettings(currentCharKey) or {}
+            
+            local text = string.format([[
+Auberdine Exporter v1.3.2b - Gestion avancée des personnages
+
+Personnages: %d
+Métiers: %d  
+Total Recettes: %d
+
+Personnage Actuel: %s (%s)
+Type: %s | Groupe: %s | Export: %s
+
+NOUVEAU v1.3.2b:
+• Gestion des types de personnages (Main/Alt/Bank/Mule)
+• Organisation par groupes de comptes
+• Export sélectif des personnages
+• Relations main/alt dans les exports
+
+Instructions:
+1. Ouvrez les fenêtres de métiers pour scanner automatiquement les recettes
+2. Utilisez "Export Auberdine" pour générer un export complet pour auberdine.eu
+3. Utilisez "Gestion Personnages" pour configurer vos personnages
+4. Utilisez "Export CSV" pour générer un export au format tableur
+5. Utilisez "Supprimer Cache" pour effacer toutes les données stockées
+
+Commandes principales:
+• /auberdine - Ouvrir cette interface
+• /auberdine config - Lister la configuration des personnages
+• /auberdine settype <main|alt|bank|mule> - Définir le type du personnage
+• /auberdine account <groupe> - Définir le groupe de compte
+• /auberdine export <enable|disable> - Activer/désactiver l'export
+• /auberdine help - Aide complète
+]], 
+                stats.totalCharacters, 
+                stats.totalProfessions, 
+                stats.totalRecipes,
+                currentCharData and currentCharData.name or "Inconnu",
+                currentCharData and currentCharData.realm or "Inconnu",
+                currentSettings.characterType or "main",
+                currentSettings.accountGroup or (AuberdineExporterDB.accountGroup or "Groupe-Auto"),
+                (currentSettings.exportEnabled ~= false) and "Activé" or "Désactivé"
+            )
+            
+            if stats.totalCharacters > 0 then
+                text = text .. "\n\nDétails par personnage:\n"
+                for charKey, charData in pairs(AuberdineExporterDB.characters or {}) do
+                    local charProfs = 0
+                    local charRecipes = 0
+                    if charData.professions then
+                        for _, profData in pairs(charData.professions) do
+                            charProfs = charProfs + 1
+                            if profData.recipes then
+                                for _ in pairs(profData.recipes) do charRecipes = charRecipes + 1 end
+                            end
+                        end
+                    end
+                    text = text .. string.format("• %s: %d métiers, %d recettes\n", 
+                        charData.name or charKey, charProfs, charRecipes)
+                end
+            end
+            
+            frame.textContent:SetText(text)
+        else
+            frame.textContent:SetText("AuberdineExporter - Chargement...")
+        end
     end
     
     self.mainFrame = frame
     return frame
-end
-
--- NOUVELLE FONCTION: Vue unifiée des personnages 
-function AuberdineExporterUI:CreateUnifiedCharacterView(parent)
-    -- Créer une zone conteneur pour le contenu des personnages
-    local characterArea = CreateFrame("Frame", nil, parent)
-    characterArea:SetAllPoints(parent)
-    parent.characterContentArea = characterArea
-    
-    -- Titre principal
-    local title = characterArea:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 20, -10)
-    title:SetText("Structure Familiale des Personnages")
-    title:SetTextColor(1, 1, 0)
-    
-    -- Instructions compactes
-    local instructions = characterArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    instructions:SetPoint("TOPLEFT", 20, -35)
-    instructions:SetPoint("TOPRIGHT", -20, -35)
-    instructions:SetJustifyH("LEFT")
-    instructions:SetText("Visualisez et gérez vos personnages. Utilisez les boutons à gauche pour les exports.")
-    instructions:SetTextColor(0.8, 0.8, 0.8)
-    
-    -- Zone de scroll pour l'affichage des cartes personnages
-    local scrollFrame = CreateFrame("ScrollFrame", nil, characterArea)
-    scrollFrame:SetPoint("TOPLEFT", 20, -60)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -40, 120)  -- Espace pour la légende en bas
-    
-    -- Support molette de souris
-    scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        if IsShiftKeyDown() then
-            -- Scroll horizontal avec Shift
-            local currentH = self:GetHorizontalScroll()
-            local maxScrollH = self:GetHorizontalScrollRange()
-            local newScrollH = math.max(0, math.min(maxScrollH, currentH - (delta * 50)))
-            self:SetHorizontalScroll(newScrollH)
-        else
-            -- Scroll vertical normal
-            local current = self:GetVerticalScroll()
-            local maxScroll = self:GetVerticalScrollRange()
-            local newScroll = math.max(0, math.min(maxScroll, current - (delta * 50)))
-            self:SetVerticalScroll(newScroll)
-        end
-    end)
-    
-    local content = CreateFrame("Frame", nil, scrollFrame)
-    scrollFrame:SetScrollChild(content)
-    
-    -- Créer les barres de scroll personnalisées
-    self:CreateScrollBars(scrollFrame, characterArea)
-    
-    -- Créer l'affichage des cartes personnages
-    self:CreateCharacterCardLayout(content, characterArea)
-    
-    -- Section infos/légende en bas
-    self:CreateBottomLegend(characterArea)
-    
-    -- Stocker les références pour l'actualisation
-    characterArea.scrollFrame = scrollFrame
-    characterArea.content = content
-end
-
--- Fonction pour créer les barres de scroll
-function AuberdineExporterUI:CreateScrollBars(scrollFrame, parent)
-    -- BARRE DE SCROLL VERTICALE
-    local vScrollBar = CreateFrame("Frame", nil, parent)
-    vScrollBar:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 16, 0)
-    vScrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 16, 20)
-    vScrollBar:SetWidth(12)
-    
-    vScrollBar.bg = vScrollBar:CreateTexture(nil, "BACKGROUND")
-    vScrollBar.bg:SetAllPoints()
-    vScrollBar.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-    
-    vScrollBar.thumb = CreateFrame("Button", nil, vScrollBar)
-    vScrollBar.thumb:SetWidth(10)
-    vScrollBar.thumb:SetHeight(30)
-    vScrollBar.thumb:SetPoint("TOP", 0, -1)
-    vScrollBar.thumb:EnableMouse(true)
-    vScrollBar.thumb:RegisterForDrag("LeftButton")
-    
-    vScrollBar.thumb.bg = vScrollBar.thumb:CreateTexture(nil, "ARTWORK")
-    vScrollBar.thumb.bg:SetAllPoints()
-    vScrollBar.thumb.bg:SetColorTexture(0.6, 0.6, 0.6, 1)
-    
-    vScrollBar.thumb.bgHighlight = vScrollBar.thumb:CreateTexture(nil, "HIGHLIGHT")
-    vScrollBar.thumb.bgHighlight:SetAllPoints()
-    vScrollBar.thumb.bgHighlight:SetColorTexture(0.8, 0.8, 0.8, 1)
-    
-    -- BARRE DE SCROLL HORIZONTALE
-    local hScrollBar = CreateFrame("Frame", nil, parent)
-    hScrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMLEFT", 0, -16)
-    hScrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", -16, -16)
-    hScrollBar:SetHeight(12)
-    
-    hScrollBar.bg = hScrollBar:CreateTexture(nil, "BACKGROUND")
-    hScrollBar.bg:SetAllPoints()
-    hScrollBar.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-    
-    hScrollBar.thumb = CreateFrame("Button", nil, hScrollBar)
-    hScrollBar.thumb:SetHeight(10)
-    hScrollBar.thumb:SetWidth(30)
-    hScrollBar.thumb:SetPoint("LEFT", 1, 0)
-    hScrollBar.thumb:EnableMouse(true)
-    hScrollBar.thumb:RegisterForDrag("LeftButton")
-    
-    hScrollBar.thumb.bg = hScrollBar.thumb:CreateTexture(nil, "ARTWORK")
-    hScrollBar.thumb.bg:SetAllPoints()
-    hScrollBar.thumb.bg:SetColorTexture(0.6, 0.6, 0.6, 1)
-    
-    -- Fonctions de mise à jour et d'interaction des barres de scroll
-    local function UpdateVerticalScrollBar()
-        local maxScroll = scrollFrame:GetVerticalScrollRange()
-        local currentScroll = scrollFrame:GetVerticalScroll()
-        
-        if maxScroll > 0 then
-            vScrollBar:Show()
-            local barHeight = vScrollBar:GetHeight() - 2
-            local thumbHeight = math.max(20, barHeight * (scrollFrame:GetHeight() / (scrollFrame:GetHeight() + maxScroll)))
-            local thumbPos = (currentScroll / maxScroll) * (barHeight - thumbHeight)
-            
-            vScrollBar.thumb:SetHeight(thumbHeight)
-            vScrollBar.thumb:SetPoint("TOP", 0, -1 - thumbPos)
-        else
-            vScrollBar:Hide()
-        end
-    end
-    
-    local function UpdateHorizontalScrollBar()
-        local maxScroll = scrollFrame:GetHorizontalScrollRange()
-        local currentScroll = scrollFrame:GetHorizontalScroll()
-        
-        if maxScroll > 0 then
-            hScrollBar:Show()
-            local barWidth = hScrollBar:GetWidth() - 2
-            local thumbWidth = math.max(20, barWidth * (scrollFrame:GetWidth() / (scrollFrame:GetWidth() + maxScroll)))
-            local thumbPos = (currentScroll / maxScroll) * (barWidth - thumbWidth)
-            
-            hScrollBar.thumb:SetWidth(thumbWidth)
-            hScrollBar.thumb:SetPoint("LEFT", 1 + thumbPos, 0)
-        else
-            hScrollBar:Hide()
-        end
-    end
-    
-    -- Drag vertical avec correction
-    vScrollBar.thumb:SetScript("OnDragStart", function(self)
-        self.isDragging = true
-        self.startY = select(2, GetCursorPosition()) / self:GetEffectiveScale()
-        self.startScroll = scrollFrame:GetVerticalScroll()
-    end)
-    
-    vScrollBar.thumb:SetScript("OnDragStop", function(self)
-        self.isDragging = false
-    end)
-    
-    vScrollBar.thumb:SetScript("OnUpdate", function(self)
-        if self.isDragging then
-            local currentY = select(2, GetCursorPosition()) / self:GetEffectiveScale()
-            local deltaY = self.startY - currentY
-            local barHeight = vScrollBar:GetHeight() - 2
-            local maxScroll = scrollFrame:GetVerticalScrollRange()
-            
-            if maxScroll > 0 then
-                local thumbHeight = vScrollBar.thumb:GetHeight()
-                local scrollRange = barHeight - thumbHeight
-                if scrollRange > 0 then
-                    local scrollDelta = (deltaY / scrollRange) * maxScroll
-                    local newScroll = math.max(0, math.min(maxScroll, self.startScroll + scrollDelta))
-                    scrollFrame:SetVerticalScroll(newScroll)
-                end
-            end
-        end
-    end)
-    
-    -- Drag horizontal avec correction
-    hScrollBar.thumb:SetScript("OnDragStart", function(self)
-        self.isDragging = true
-        self.startX = GetCursorPosition() / self:GetEffectiveScale()
-        self.startScroll = scrollFrame:GetHorizontalScroll()
-    end)
-    
-    hScrollBar.thumb:SetScript("OnDragStop", function(self)
-        self.isDragging = false
-    end)
-    
-    hScrollBar.thumb:SetScript("OnUpdate", function(self)
-        if self.isDragging then
-            local currentX = GetCursorPosition() / self:GetEffectiveScale()
-            local deltaX = currentX - self.startX
-            local barWidth = hScrollBar:GetWidth() - 2
-            local maxScroll = scrollFrame:GetHorizontalScrollRange()
-            
-            if maxScroll > 0 then
-                local thumbWidth = hScrollBar.thumb:GetWidth()
-                local scrollRange = barWidth - thumbWidth
-                if scrollRange > 0 then
-                    local scrollDelta = (deltaX / scrollRange) * maxScroll
-                    local newScroll = math.max(0, math.min(maxScroll, self.startScroll + scrollDelta))
-                    scrollFrame:SetHorizontalScroll(newScroll)
-                end
-            end
-        end
-    end)
-    
-    -- Clic sur les barres pour sauter à une position
-    vScrollBar:EnableMouse(true)
-    vScrollBar:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            local cursorY = select(2, GetCursorPosition()) / self:GetEffectiveScale()
-            local barTop = self:GetTop()
-            local barBottom = self:GetBottom()
-            local clickPos = (barTop - cursorY) / (barTop - barBottom)
-            
-            local maxScroll = scrollFrame:GetVerticalScrollRange()
-            local newScroll = math.max(0, math.min(maxScroll, clickPos * maxScroll))
-            scrollFrame:SetVerticalScroll(newScroll)
-        end
-    end)
-    
-    hScrollBar:EnableMouse(true)
-    hScrollBar:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            local cursorX = GetCursorPosition() / self:GetEffectiveScale()
-            local barLeft = self:GetLeft()
-            local barRight = self:GetRight()
-            local clickPos = (cursorX - barLeft) / (barRight - barLeft)
-            
-            local maxScroll = scrollFrame:GetHorizontalScrollRange()
-            local newScroll = math.max(0, math.min(maxScroll, clickPos * maxScroll))
-            scrollFrame:SetHorizontalScroll(newScroll)
-        end
-    end)
-    
-    -- Événements pour les barres de scroll
-    scrollFrame:SetScript("OnScrollRangeChanged", function()
-        UpdateVerticalScrollBar()
-        UpdateHorizontalScrollBar()
-    end)
-    scrollFrame:SetScript("OnVerticalScroll", UpdateVerticalScrollBar)
-    scrollFrame:SetScript("OnHorizontalScroll", UpdateHorizontalScrollBar)
-    
-    -- Initialiser l'affichage des barres
-    C_Timer.After(0.1, function()
-        UpdateVerticalScrollBar()
-        UpdateHorizontalScrollBar()
-    end)
-end
-
--- Fonction pour créer la légende en bas
-function AuberdineExporterUI:CreateBottomLegend(parent)
-    local bottomFrame = CreateFrame("Frame", nil, parent)
-    bottomFrame:SetPoint("BOTTOMLEFT", 20, 20)
-    bottomFrame:SetPoint("BOTTOMRIGHT", -20, 20)
-    bottomFrame:SetHeight(80)
-    
-    bottomFrame.bg = bottomFrame:CreateTexture(nil, "BACKGROUND")
-    bottomFrame.bg:SetAllPoints()
-    bottomFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.4)
-    
-    -- Ligne de séparation
-    local separator = bottomFrame:CreateTexture(nil, "ARTWORK")
-    separator:SetPoint("TOPLEFT", 5, -5)
-    separator:SetPoint("TOPRIGHT", -5, -5)
-    separator:SetHeight(2)
-    separator:SetColorTexture(0.5, 0.5, 0.5, 1)
-    
-    -- Légende des couleurs
-    local legendText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    legendText:SetPoint("TOPLEFT", 10, -15)
-    legendText:SetText("Types de personnages:")
-    legendText:SetTextColor(1, 1, 1)
-    
-    local typeLabels = {
-        {type = "Main", color = {0.1, 0.4, 0.7}, x = 140},
-        {type = "Alt", color = {0.6, 0.3, 0.8}, x = 200},
-        {type = "Banque", color = {0.8, 0.6, 0.1}, x = 260},
-        {type = "Mule", color = {0.7, 0.4, 0.2}, x = 330}
-    }
-    
-    for _, typeInfo in ipairs(typeLabels) do
-        local colorSample = bottomFrame:CreateTexture(nil, "ARTWORK")
-        colorSample:SetSize(10, 10)
-        colorSample:SetPoint("TOPLEFT", typeInfo.x, -18)
-        colorSample:SetColorTexture(typeInfo.color[1], typeInfo.color[2], typeInfo.color[3], 1)
-        
-        local typeText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        typeText:SetPoint("TOPLEFT", typeInfo.x + 12, -15)
-        typeText:SetText(typeInfo.type)
-        typeText:SetTextColor(0.9, 0.9, 0.9)
-    end
-    
-    -- Informations et aide
-    local helpText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    helpText:SetPoint("TOPLEFT", 10, -35)
-    helpText:SetText("Clic sur groupes = éditer | Coin supérieur droit des cartes = export ON/OFF | Shift+molette = scroll horizontal")
-    helpText:SetTextColor(0.7, 0.7, 0.7)
-    
-    -- ID de compte
-    local accountKey = "AB-????-????"
-    if AuberdineExporter and AuberdineExporter.GetOrCreateAccountKey then
-        accountKey = AuberdineExporter:GetOrCreateAccountKey()
-    end
-    local accountKeyText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    accountKeyText:SetPoint("TOPLEFT", 10, -55)
-    accountKeyText:SetText("ID Compte: " .. accountKey)
-    accountKeyText:SetTextColor(0.7, 0.7, 0.7)
-end
-
--- Fonction pour actualiser la vue des personnages
-function AuberdineExporterUI:RefreshCharacterView(frame)
-    if not frame or not frame.mainContent then
-        return
-    end
-    
-    -- Nettoyer seulement la zone de contenu des personnages, pas la sidebar
-    if frame.mainContent.characterContentArea then
-        local children = {frame.mainContent.characterContentArea:GetChildren()}
-        for _, child in pairs(children) do
-            child:Hide()
-            child:SetParent(nil)
-        end
-        frame.mainContent.characterContentArea:Hide()
-        frame.mainContent.characterContentArea:SetParent(nil)
-        frame.mainContent.characterContentArea = nil
-    end
-    
-    -- Recréer seulement la vue des personnages
-    self:CreateUnifiedCharacterView(frame.mainContent)
-    print("|cff00ff00AuberdineExporter:|r Vue des personnages actualisée !")
 end
 
 function AuberdineExporterUI:ToggleMainFrame()
@@ -485,8 +205,7 @@ function AuberdineExporterUI:ToggleMainFrame()
     if frame:IsShown() then
         frame:Hide()
     else
-        -- Actualiser la vue avant de l'afficher
-        self:RefreshCharacterView(frame)
+        frame.UpdateContent()
         frame:Show()
     end
 end
@@ -950,6 +669,16 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     return frame
 end
 
+function AuberdineExporterUI:ToggleMainFrame()
+    local frame = self:CreateMainFrame()
+    if frame:IsShown() then
+        frame:Hide()
+    else
+        frame.UpdateContent()
+        frame:Show()
+    end
+end
+
 function AuberdineExporterUI:ShowExportFrame(exportType)
     AuberdineExportUI:ShowExportFrame(exportType)
 end
@@ -999,6 +728,31 @@ StaticPopupDialogs["AUBERDINE_EDIT_GROUP"] = {
         self:GetParent():Hide()
     end,
     preferredIndex = 3,
+}
+
+-- Static popup pour l'aide
+StaticPopupDialogs["AUBERDINE_HELP_POPUP"] = {
+    text = "AIDE - Configuration des Personnages\n\n" ..
+           "Types de personnages :\n" ..
+           "• Main (Bleu) : Personnage principal\n" ..
+           "• Alt (Violet) : Personnage alternatif\n" ..
+           "• Banque (Or) : Personnage de stockage\n" ..
+           "• Mule (Cuivre) : Personnage de transport\n\n" ..
+           "Fonctionnalités :\n" ..
+           "• Cliquez sur les dropdowns pour changer le type\n" ..
+           "• Les connexions montrent la hiérarchie\n" ..
+           "• L'icône en haut à droite active/désactive l'export\n" ..
+           "• Utilisez 'Actualiser' après modifications",
+    button1 = "Compris",
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+    -- Forcer un niveau plus élevé pour passer devant la fenêtre de config
+    OnShow = function(self)
+        self:SetFrameStrata("TOOLTIP")
+        self:SetFrameLevel(200)
+    end,
 }
 
 -- Static popup for reset confirmation
@@ -1061,33 +815,57 @@ function AuberdineExporterUI:ShowGroupEditPopup(charKey, currentGroup)
 end
 
 function AuberdineExporterUI:ShowHelpPopup()
-    -- Créer une fenêtre d'aide dédiée au lieu d'un StaticPopup
-    if self.helpFrame then
-        if self.helpFrame:IsShown() then
-            self.helpFrame:Hide()
+    StaticPopup_Show("AUBERDINE_HELP_POPUP")
+end
+
+function AuberdineExporterUI:ShowCharacterConfigFrame()
+    -- Fermer la fenêtre principale pour éviter les superpositions
+    if self.mainFrame and self.mainFrame:IsShown() then
+        self.mainFrame:Hide()
+    end
+    
+    if self.charConfigFrame then
+        if self.charConfigFrame:IsShown() then
+            self.charConfigFrame:Hide()
+            -- Rouvrir la fenêtre principale
+            if self.mainFrame then
+                self.mainFrame:Show()
+            end
             return
         else
-            self.helpFrame:Show()
+            self.charConfigFrame:Show()
             return
         end
     end
     
-    -- Créer la fenêtre d'aide
-    local frame = CreateFrame("Frame", "AuberdineHelpFrame", UIParent)
-    frame:SetSize(600, 500)
+    -- Créer la fenêtre de gestion des personnages
+    local frame = CreateFrame("Frame", "AuberdineCharacterConfigFrame", UIParent)
+    frame:SetSize(900, 650)
     frame:SetPoint("CENTER")
-    frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame:SetFrameLevel(150)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")  -- Plus haut niveau
+    frame:SetFrameLevel(100)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     
-    -- Background plus opaque pour une meilleure lisibilité
+    -- Gestion de la touche ESC
+    frame:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:Hide()
+            if AuberdineExporterUI.mainFrame then
+                AuberdineExporterUI.mainFrame:Show()
+            end
+        end
+    end)
+    frame:SetPropagateKeyboardInput(true)
+    frame:EnableKeyboard(true)
+    
+    -- Background opaque
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0.05, 0.05, 0.15, 0.95)  -- Bleu foncé, presque opaque
+    frame.bg:SetColorTexture(0, 0, 0, 0.95)  -- Plus opaque
     
     -- Border
     frame.border = CreateFrame("Frame", nil, frame, "DialogBorderTemplate")
@@ -1097,9 +875,9 @@ function AuberdineExporterUI:ShowHelpPopup()
     frame.titleBg:SetPoint("TOPLEFT", 5, -5)
     frame.titleBg:SetPoint("TOPRIGHT", -5, -5)
     frame.titleBg:SetHeight(25)
-    frame.titleBg:SetColorTexture(0.1, 0.3, 0.6, 1)  -- Bleu titre
+    frame.titleBg:SetColorTexture(0.2, 0.2, 0.2, 1)
     
-    -- Icône d'aide
+    -- Addon icon in title bar
     frame.icon = frame:CreateTexture(nil, "OVERLAY")
     frame.icon:SetSize(16, 16)
     frame.icon:SetPoint("TOPLEFT", 10, -7)
@@ -1107,123 +885,371 @@ function AuberdineExporterUI:ShowHelpPopup()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)
-    frame.title:SetText("Aide - Famille d'Auberdine v1.3.3")
+    frame.title:SetText("Famille d'Auberdine v1.3.2b")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
     frame.closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.closeBtn:SetPoint("TOPRIGHT", -5, -5)
-    frame.closeBtn:SetScript("OnClick", function() frame:Hide() end)
-    
-    -- Gestion ESC
-    frame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:Hide()
+    frame.closeBtn:SetScript("OnClick", function() 
+        frame:Hide()
+        -- Rouvrir la fenêtre principale
+        if AuberdineExporterUI.mainFrame then
+            AuberdineExporterUI.mainFrame:Show()
         end
     end)
-    frame:SetPropagateKeyboardInput(true)
-    frame:EnableKeyboard(true)
     
-    -- Zone de contenu avec scroll
-    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 15, -35)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
+    -- Content area
+    self:CreateCharacterConfigContent(frame)
     
+    self.charConfigFrame = frame
+    frame:Show()
+end
+
+function AuberdineExporterUI:CreateCharacterConfigContent(frame)
+    local yOffset = -40
+    
+    -- Titre principal seulement (libérer l'espace)
+    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    instructions:SetPoint("TOPLEFT", 20, yOffset)
+    instructions:SetText("Structure familliale")
+    instructions:SetTextColor(1, 1, 0)
+    
+    yOffset = yOffset - 35
+    
+    -- Zone de scroll MAXIMISÉE pour l'affichage graphique des cartes
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame)  -- Supprimé le template pour faire nos propres barres
+    scrollFrame:SetPoint("TOPLEFT", 20, yOffset)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -40, 140)  -- Ajusté pour les barres plus fines
+    
+    -- Ajouter le support de la molette avec Shift pour horizontal
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        if IsShiftKeyDown() then
+            -- Scroll horizontal avec Shift
+            local currentH = self:GetHorizontalScroll()
+            local maxScrollH = self:GetHorizontalScrollRange()
+            local newScrollH = math.max(0, math.min(maxScrollH, currentH - (delta * 50)))
+            self:SetHorizontalScroll(newScrollH)
+        else
+            -- Scroll vertical normal
+            local current = self:GetVerticalScroll()
+            local maxScroll = self:GetVerticalScrollRange()
+            local newScroll = math.max(0, math.min(maxScroll, current - (delta * 50)))
+            self:SetVerticalScroll(newScroll)
+        end
+    end)
+    
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    scrollFrame:SetScrollChild(content)
+    -- content:SetWidth(scrollFrame:GetWidth()) -- Supprimé pour permettre scroll horizontal
+    
+    -- BARRES DE SCROLL MANUELLES IDENTIQUES
+    
+    -- BARRE DE SCROLL VERTICALE MANUELLE
+    local vScrollBar = CreateFrame("Frame", nil, frame)
+    vScrollBar:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 16, 0)
+    vScrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 16, 20)
+    vScrollBar:SetWidth(12)  -- Plus fine
+    
+    -- Background de la barre verticale
+    vScrollBar.bg = vScrollBar:CreateTexture(nil, "BACKGROUND")
+    vScrollBar.bg:SetAllPoints()
+    vScrollBar.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+    
+    -- Curseur de la barre verticale
+    vScrollBar.thumb = CreateFrame("Button", nil, vScrollBar)
+    vScrollBar.thumb:SetWidth(10)  -- Plus fin
+    vScrollBar.thumb:SetHeight(30)  -- Légèrement plus petit
+    vScrollBar.thumb:SetPoint("TOP", 0, -1)
+    
+    vScrollBar.thumb.bg = vScrollBar.thumb:CreateTexture(nil, "ARTWORK")
+    vScrollBar.thumb.bg:SetAllPoints()
+    vScrollBar.thumb.bg:SetColorTexture(0.6, 0.6, 0.6, 1)
+    
+    vScrollBar.thumb.bgHighlight = vScrollBar.thumb:CreateTexture(nil, "HIGHLIGHT")
+    vScrollBar.thumb.bgHighlight:SetAllPoints()
+    vScrollBar.thumb.bgHighlight:SetColorTexture(0.8, 0.8, 0.8, 1)
+    
+    -- Fonction de mise à jour du scroll vertical
+    local function UpdateVerticalScrollBar()
+        local maxScroll = scrollFrame:GetVerticalScrollRange()
+        local currentScroll = scrollFrame:GetVerticalScroll()
+        
+        if maxScroll > 0 then
+            vScrollBar:Show()
+            local barHeight = vScrollBar:GetHeight() - 2
+            local thumbHeight = math.max(20, barHeight * (scrollFrame:GetHeight() / (scrollFrame:GetHeight() + maxScroll)))
+            local thumbPos = (currentScroll / maxScroll) * (barHeight - thumbHeight)
+            
+            vScrollBar.thumb:SetHeight(thumbHeight)
+            vScrollBar.thumb:SetPoint("TOP", 0, -1 - thumbPos)
+        else
+            vScrollBar:Hide()
+        end
+    end
+    
+    -- Drag du curseur vertical
+    vScrollBar.thumb:EnableMouse(true)
+    vScrollBar.thumb:RegisterForDrag("LeftButton")
+    vScrollBar.thumb:SetScript("OnDragStart", function(self)
+        self.isDragging = true
+        self.startY = select(2, GetCursorPosition())
+        self.startScroll = scrollFrame:GetVerticalScroll()
+    end)
+    
+    vScrollBar.thumb:SetScript("OnDragStop", function(self)
+        self.isDragging = false
+    end)
+    
+    vScrollBar.thumb:SetScript("OnUpdate", function(self)
+        if self.isDragging then
+            local currentY = select(2, GetCursorPosition())
+            local deltaY = self.startY - currentY  -- Inversé pour WoW
+            local barHeight = vScrollBar:GetHeight() - 2
+            local maxScroll = scrollFrame:GetVerticalScrollRange()
+            
+            if maxScroll > 0 then
+                local thumbHeight = vScrollBar.thumb:GetHeight()
+                local scrollDelta = (deltaY / (barHeight - thumbHeight)) * maxScroll
+                local newScroll = math.max(0, math.min(maxScroll, self.startScroll + scrollDelta))
+                scrollFrame:SetVerticalScroll(newScroll)
+                UpdateVerticalScrollBar()
+            end
+        end
+    end)
+    
+    -- Clic sur la barre verticale pour sauter à une position
+    vScrollBar:EnableMouse(true)
+    vScrollBar:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            local cursorY = select(2, GetCursorPosition())
+            local barTop = self:GetTop() * self:GetEffectiveScale()
+            local barHeight = self:GetHeight() * self:GetEffectiveScale()
+            local clickPos = (barTop - cursorY) / barHeight
+            
+            local maxScroll = scrollFrame:GetVerticalScrollRange()
+            local newScroll = math.max(0, math.min(maxScroll, clickPos * maxScroll))
+            scrollFrame:SetVerticalScroll(newScroll)
+            UpdateVerticalScrollBar()
+        end
+    end)
+    
+    -- BARRE DE SCROLL HORIZONTALE MANUELLE
+    -- Créer la barre de scroll horizontale
+    local hScrollBar = CreateFrame("Frame", nil, frame)
+    hScrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMLEFT", 0, -16)
+    hScrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", -16, -16)
+    hScrollBar:SetHeight(12)  -- Plus fine
+    
+    -- Background de la barre
+    hScrollBar.bg = hScrollBar:CreateTexture(nil, "BACKGROUND")
+    hScrollBar.bg:SetAllPoints()
+    hScrollBar.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+    
+    -- Curseur de la barre
+    hScrollBar.thumb = CreateFrame("Button", nil, hScrollBar)
+    hScrollBar.thumb:SetHeight(10)  -- Plus fin
+    hScrollBar.thumb:SetWidth(30)   -- Légèrement plus petit
+    hScrollBar.thumb:SetPoint("LEFT", 1, 0)
+    
+    hScrollBar.thumb.bg = hScrollBar.thumb:CreateTexture(nil, "ARTWORK")
+    hScrollBar.thumb.bg:SetAllPoints()
+    hScrollBar.thumb.bg:SetColorTexture(0.6, 0.6, 0.6, 1)
+    
+    hScrollBar.thumb.bgHighlight = hScrollBar.thumb:CreateTexture(nil, "HIGHLIGHT")
+    hScrollBar.thumb.bgHighlight:SetAllPoints()
+    hScrollBar.thumb.bgHighlight:SetColorTexture(0.8, 0.8, 0.8, 1)
+    
+    -- Fonction de mise à jour du scroll horizontal
+    local function UpdateHorizontalScrollBar()
+        local maxScroll = scrollFrame:GetHorizontalScrollRange()
+        local currentScroll = scrollFrame:GetHorizontalScroll()
+        
+        if maxScroll > 0 then
+            hScrollBar:Show()
+            local barWidth = hScrollBar:GetWidth() - 2
+            local thumbWidth = math.max(20, barWidth * (scrollFrame:GetWidth() / (scrollFrame:GetWidth() + maxScroll)))
+            local thumbPos = (currentScroll / maxScroll) * (barWidth - thumbWidth)
+            
+            hScrollBar.thumb:SetWidth(thumbWidth)
+            hScrollBar.thumb:SetPoint("LEFT", 1 + thumbPos, 0)
+        else
+            hScrollBar:Hide()
+        end
+    end
+    
+    -- Drag du curseur horizontal
+    hScrollBar.thumb:EnableMouse(true)
+    hScrollBar.thumb:RegisterForDrag("LeftButton")
+    hScrollBar.thumb:SetScript("OnDragStart", function(self)
+        self.isDragging = true
+        self.startX = GetCursorPosition()
+        self.startScroll = scrollFrame:GetHorizontalScroll()
+    end)
+    
+    hScrollBar.thumb:SetScript("OnDragStop", function(self)
+        self.isDragging = false
+    end)
+    
+    hScrollBar.thumb:SetScript("OnUpdate", function(self)
+        if self.isDragging then
+            local currentX = GetCursorPosition()
+            local deltaX = currentX - self.startX
+            local barWidth = hScrollBar:GetWidth() - 2
+            local maxScroll = scrollFrame:GetHorizontalScrollRange()
+            
+            if maxScroll > 0 then
+                local thumbWidth = hScrollBar.thumb:GetWidth()
+                local scrollDelta = (deltaX / (barWidth - thumbWidth)) * maxScroll
+                local newScroll = math.max(0, math.min(maxScroll, self.startScroll + scrollDelta))
+                scrollFrame:SetHorizontalScroll(newScroll)
+                UpdateHorizontalScrollBar()
+            end
+        end
+    end)
+    
+    -- Clic sur la barre pour sauter à une position
+    hScrollBar:EnableMouse(true)
+    hScrollBar:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            local cursorX = GetCursorPosition()
+            local barLeft = self:GetLeft() * self:GetEffectiveScale()
+            local barWidth = self:GetWidth() * self:GetEffectiveScale()
+            local clickPos = (cursorX - barLeft) / barWidth
+            
+            local maxScroll = scrollFrame:GetHorizontalScrollRange()
+            local newScroll = math.max(0, math.min(maxScroll, clickPos * maxScroll))
+            scrollFrame:SetHorizontalScroll(newScroll)
+            UpdateHorizontalScrollBar()
+        end
+    end)
+    
+    -- Mettre à jour les barres quand le contenu change
+    scrollFrame:SetScript("OnScrollRangeChanged", function()
+        UpdateVerticalScrollBar()
+        UpdateHorizontalScrollBar()
+    end)
+    scrollFrame:SetScript("OnVerticalScroll", UpdateVerticalScrollBar)
+    scrollFrame:SetScript("OnHorizontalScroll", UpdateHorizontalScrollBar)
+    
+    -- Créer l'affichage graphique des personnages
+    self:CreateCharacterCardLayout(content, frame)
+    
+    -- SECTION INFOS/CONTRÔLES EN BAS (tout regroupé)
+    local bottomFrame = CreateFrame("Frame", nil, frame)
+    bottomFrame:SetPoint("BOTTOMLEFT", 20, 20)
+    bottomFrame:SetPoint("BOTTOMRIGHT", -20, 20)
+    bottomFrame:SetHeight(100)
+    
+    -- Background pour la section infos
+    bottomFrame.bg = bottomFrame:CreateTexture(nil, "BACKGROUND")
+    bottomFrame.bg:SetAllPoints()
+    bottomFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.4)
+    
+    -- Ligne de séparation
+    local separator = bottomFrame:CreateTexture(nil, "ARTWORK")
+    separator:SetPoint("TOPLEFT", 5, -5)
+    separator:SetPoint("TOPRIGHT", -5, -5)
+    separator:SetHeight(2)
+    separator:SetColorTexture(0.5, 0.5, 0.5, 1)
+    
+    -- PREMIÈRE LIGNE: Légende des couleurs
+    local legendText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    legendText:SetPoint("TOPLEFT", 10, -15)
+    legendText:SetText("Couleurs:")
+    legendText:SetTextColor(1, 1, 1)
+    
+    -- Échantillons de couleur compacts
+    local typeLabels = {
+        {type = "Main", color = {0.1, 0.4, 0.7}, x = 60},
+        {type = "Alt", color = {0.6, 0.3, 0.8}, x = 120},
+        {type = "Banque", color = {0.8, 0.6, 0.1}, x = 180},
+        {type = "Mule", color = {0.7, 0.4, 0.2}, x = 250}
+    }
+    
+    for _, typeInfo in ipairs(typeLabels) do
+        local colorSample = bottomFrame:CreateTexture(nil, "ARTWORK")
+        colorSample:SetSize(10, 10)
+        colorSample:SetPoint("TOPLEFT", typeInfo.x, -18)
+        colorSample:SetColorTexture(typeInfo.color[1], typeInfo.color[2], typeInfo.color[3], 1)
+        
+        local typeText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        typeText:SetPoint("TOPLEFT", typeInfo.x + 12, -15)
+        typeText:SetText(typeInfo.type)
+        typeText:SetTextColor(0.9, 0.9, 0.9)
+    end
+    
+    -- DEUXIÈME LIGNE: Clé de compte et infos
+    local accountKey = "AB-????-????"
+    if AuberdineExporter and AuberdineExporter.GetOrCreateAccountKey then
+        accountKey = AuberdineExporter:GetOrCreateAccountKey()
+    end
+    local accountKeyText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    accountKeyText:SetPoint("TOPLEFT", 10, -35)
+    accountKeyText:SetText("ID Compte: " .. accountKey)
+    accountKeyText:SetTextColor(0.7, 0.7, 0.7)
+    
+    -- Aide sur les connexions
+    local connectionText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    connectionText:SetPoint("TOPLEFT", 200, -35)
+    connectionText:SetText("Lignes = hiérarchie | Coin = export ON/OFF | Clic groupe = éditer")
+    connectionText:SetTextColor(0.7, 0.7, 0.7)
+    
+    -- TROISIÈME LIGNE: Boutons
+    local helpBtn = CreateFrame("Button", nil, bottomFrame, "UIPanelButtonTemplate")
+    helpBtn:SetPoint("TOPLEFT", 10, -55)
+    helpBtn:SetSize(60, 25)
+    helpBtn:SetText("Aide")
+    helpBtn:SetScript("OnClick", function()
+        AuberdineExporterUI:ShowHelpPopup()
+    end)
+    
+    local refreshBtn = CreateFrame("Button", nil, bottomFrame, "UIPanelButtonTemplate")
+    refreshBtn:SetPoint("TOPLEFT", 80, -55)
+    refreshBtn:SetSize(80, 25)
+    refreshBtn:SetText("Actualiser")
+    refreshBtn:SetScript("OnClick", function()
+        -- Forcer la fermeture complète et recréation
+        if AuberdineExporterUI.charConfigFrame then
+            AuberdineExporterUI.charConfigFrame:Hide()
+            AuberdineExporterUI.charConfigFrame = nil
+        end
+        -- Force le rechargement immédiat
+        AuberdineExporterUI:ShowCharacterConfigFrame()
+        print("Interface des personnages actualisée!")
+    end)
+    
+    local closeBtn = CreateFrame("Button", nil, bottomFrame, "UIPanelButtonTemplate")
+    closeBtn:SetPoint("TOPRIGHT", -10, -55)
+    closeBtn:SetSize(80, 25)
+    closeBtn:SetText("Fermer")
+    closeBtn:SetScript("OnClick", function()
+        frame:Hide()
+        if AuberdineExporterUI.mainFrame then
+            AuberdineExporterUI.mainFrame:Show()
+        end
+    end)
+    
+    return frame
+end
+
+-- NOUVEAU: Fonction pour créer l'affichage graphique en cartes
+function AuberdineExporterUI:GenerateCharacterCards(scrollFrame)
+    -- Créer le content frame pour le scrollFrame
     local content = CreateFrame("Frame", nil, scrollFrame)
     scrollFrame:SetScrollChild(content)
     content:SetWidth(scrollFrame:GetWidth())
     
-    -- Contenu d'aide étoffé
-    local helpText = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    helpText:SetPoint("TOPLEFT", 10, -10)
-    helpText:SetPoint("TOPRIGHT", -10, -10)
-    helpText:SetJustifyH("LEFT")
-    helpText:SetSpacing(3)
-    helpText:SetText(
-        "|cffffcc00=== INTERFACE UNIFIÉE v1.3.3 ===|r\n\n" ..
-        
-        "|cff77ff77[*] OBJECTIF PRINCIPAL|r\n" ..
-        "Gérer vos personnages et exporter vos données de métiers pour auberdine.eu\n\n" ..
-        
-        "|cff77ff77[~] ORGANISATION DE L'INTERFACE|r\n" ..
-        "• |cffaaaaff Sidebar gauche|r : Boutons d'action (Export, Actualiser, Aide)\n" ..
-        "• |cffaaaaff Zone principale|r : Vue graphique de vos personnages\n" ..
-        "• |cffaaaaff Légende en bas|r : Codes couleurs et informations compte\n\n" ..
-        
-        "|cff77ff77[@] TYPES DE PERSONNAGES|r\n" ..
-        "• |cff4488ffMain (Bleu)|r : Personnage principal de votre compte\n" ..
-        "• |cffaa44ffAlt (Violet)|r : Personnage alternatif, relié au main\n" ..
-        "• |cffffaa44Banque (Or)|r : Personnage de stockage des objets\n" ..
-        "• |cffff8844Mule (Cuivre)|r : Personnage de transport/transfer\n\n" ..
-        
-        "|cff77ff77[+] FONCTIONNALITÉS DES CARTES|r\n" ..
-        "• |cffccccccNom et niveau|r : Informations du personnage\n" ..
-        "• |cffccccccGroupe|r : Cliquez pour éditer le groupe de compte\n" ..
-        "• |cffccccccDropdown central|r : Changez le type de personnage\n" ..
-        "• |cffccccccCoin supérieur droit|r : Toggle export ON/OFF (vert/rouge)\n" ..
-        "• |cffccccccLignes de connexion|r : Montrent la hiérarchie Main→Alt→Banque\n\n" ..
-        
-        "|cff77ff77[>] NAVIGATION|r\n" ..
-        "• |cffccccccMolette souris|r : Scroll vertical\n" ..
-        "• |cffccccccShift + Molette|r : Scroll horizontal\n" ..
-        "• |cffccccccGlisser barres|r : Positionnement précis\n" ..
-        "• |cffccccccClic sur barres|r : Saut rapide à une position\n\n" ..
-        
-        "|cff77ff77[^] EXPORTS DISPONIBLES|r\n" ..
-        "• |cff88ff88Export Auberdine|r : Format JSON optimisé pour auberdine.eu\n" ..
-        "• |cff88ff88Export CSV|r : Format tableur pour analyse locale\n" ..
-        "• |cffff8888Supprimer Cache|r : Réinitialise toutes les données\n\n" ..
-        
-        "|cff77ff77[/] COMMANDES UTILES|r\n" ..
-        "• |cffcccccc/auberdine|r : Ouvrir/fermer l'interface\n" ..
-        "• |cffcccccc/auberdine scan|r : Scanner manuellement tous les métiers\n" ..
-        "• |cffcccccc/auberdine stats|r : Afficher les statistiques\n" ..
-        "• |cffcccccc/auberdine settype <type>|r : Changer le type du personnage actuel\n" ..
-        "• |cffcccccc/auberdine account <groupe>|r : Définir le groupe de compte\n" ..
-        "• |cffcccccc/auberdine help|r : Aide complète en console\n\n" ..
-        
-        "|cff77ff77[!] CONSEILS D'UTILISATION|r\n" ..
-        "• Scannez vos métiers en ouvrant les fenêtres de profession\n" ..
-        "• Organisez vos personnages par type pour une meilleure visibilité\n" ..
-        "• Utilisez les groupes pour séparer vos comptes multiples\n" ..
-        "• Désactivez l'export pour les personnages temporaires\n" ..
-        "• Actualisez la vue après avoir modifié des paramètres\n\n" ..
-        
-        "|cff77ff77[=] INTEGRATION WEB|r\n" ..
-        "Vos exports sont compatibles avec auberdine.eu pour :\n" ..
-        "• Partage de vos collections de recettes\n" ..
-        "• Comparaison avec d'autres joueurs\n" ..
-        "• Suivi de progression des métiers\n\n" ..
-        
-        "|cff77ff77[#] COMMUNAUTÉ|r\n" ..
-        "Rejoignez le Discord d'auberdine.eu pour :\n" ..
-        "• |cffaaaaff https://discord.gg/qVgtRqSkJz|r\n" ..
-        "• Support et aide de la communauté\n" ..
-        "• Nouvelles fonctionnalités et mises à jour\n" ..
-        "• Discussions entre joueurs\n\n" ..
-        
-        "|cffff7777[X] IMPORTANT|r\n" ..
-        "Les données sont sauvegardées automatiquement.\n" ..
-        "L'export inclut seulement les personnages avec export activé."
-    )
+    -- Nettoyer le contenu existant
+    local children = {content:GetChildren()}
+    for _, child in pairs(children) do
+        child:Hide()
+        child:SetParent(nil)
+    end
     
-    -- Ajuster la hauteur du contenu
-    content:SetHeight(helpText:GetStringHeight() + 20)
-    
-    -- Bouton de fermeture en bas
-    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    closeBtn:SetPoint("BOTTOM", 0, 10)
-    closeBtn:SetSize(100, 25)
-    closeBtn:SetText("Fermer")
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
-    
-    self.helpFrame = frame
-    frame:Show()
-end
-
-function AuberdineExporterUI:ShowCharacterConfigFrame()
-    -- Redirection vers la nouvelle interface unifiée
-    self:ToggleMainFrame()
+    -- Appeler la fonction de génération des cartes existante
+    self:CreateCharacterCardLayout(content, scrollFrame:GetParent())
 end
 
 function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
@@ -1261,21 +1287,6 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             table.insert(bankCharacters, charInfo)
         else
             table.insert(unknownCharacters, charInfo)
-        end
-    end
-    
-    -- Créer la table charactersGrouped pour l'arborescence
-    local charactersGrouped = {
-        main = mainCharacters,
-        alt = altCharacters,
-        bank = bankCharacters,
-        mule = {}  -- Séparé si nécessaire plus tard
-    }
-    
-    -- Séparer les mules des banques si nécessaire
-    for i = #bankCharacters, 1, -1 do
-        if bankCharacters[i].type == "mule" then
-            table.insert(charactersGrouped.mule, table.remove(bankCharacters, i))
         end
     end
     
@@ -1405,13 +1416,10 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
                         UIDropDownMenu_SetText(card.roleDropdown, self.text)
                         CloseDropDownMenus()
                         
-                        -- Actualiser seulement la vue des personnages au lieu de fermer/ouvrir
+                        -- Recharger automatiquement l'affichage
                         C_Timer.After(0.1, function()
-                            if parentFrame and parentFrame.UpdateContent then
-                                parentFrame.UpdateContent()
-                            elseif AuberdineExporterUI and AuberdineExporterUI.mainFrame then
-                                AuberdineExporterUI:RefreshCharacterView(AuberdineExporterUI.mainFrame)
-                            end
+                            parentFrame:Hide()
+                            AuberdineExporterUI:ShowCharacterConfigFrame()
                         end)
                     end
                 end
@@ -1450,97 +1458,158 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         return card
     end
     
-    -- Affichage des cartes par type
-    local currentY = -50  -- Commencer en négatif pour WoW
-    
-    -- Pour chaque type, afficher les cartes
-    local typeOrder = {"main", "alt", "bank", "mule"}
-    for _, charType in ipairs(typeOrder) do
-        local chars = charactersGrouped[charType]
-        if chars and #chars > 0 then
-            -- Afficher le titre du type
-            local typeLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            typeLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 160, currentY)
-            
-            if charType == "main" then
-                typeLabel:SetText("|cff4488ff[MAINS]|r")
-            elseif charType == "alt" then
-                typeLabel:SetText("|cffaa44ff[ALTS]|r")
-            elseif charType == "bank" then
-                typeLabel:SetText("|cffffaa44[BANQUES]|r")
-            else -- mule
-                typeLabel:SetText("|cffff8844[MULES]|r")
-            end
-            
-            currentY = currentY - 25  -- Descendre pour les cartes
-            
-            -- Afficher les cartes pour ce type
-            local startX = 160 -- Position X de départ pour les cartes
-            for i, charInfo in ipairs(chars) do
-                local cardX = startX + (i - 1) * (cardWidth + 10)
-                local card = CreateCharacterCard(content, charInfo, cardX, currentY)
-                maxWidth = math.max(maxWidth, cardX + cardWidth)
-            end
-            
-            currentY = currentY - cardHeight - 20 -- Espace après les cartes
+    -- Fonction pour dessiner des lignes de connexion entre personnages
+    local function DrawConnection(parent, fromCard, toCard, connectionType, fromX, fromY, toX, toY)
+        -- Vérifier que les cartes sont valides
+        if not fromCard or not toCard or not parent then
+            return nil
         end
+        
+        -- Utiliser les positions passées en paramètre plutôt que GetLeft/GetTop
+        -- car ces méthodes ne fonctionnent que si les frames sont déjà rendus
+        
+        -- Points de connexion (centre-bas de la carte source, centre-haut de la carte cible)
+        local fromConnectX = fromX + cardWidth/2
+        local fromConnectY = fromY - cardHeight
+        local toConnectX = toX + cardWidth/2
+        local toConnectY = toY
+        
+        -- Ligne verticale principale (du bas de la source vers le niveau de la cible)
+        local verticalHeight = math.abs(toConnectY - fromConnectY) - 20
+        if verticalHeight > 5 then
+            local line = parent:CreateTexture(nil, "ARTWORK")
+            line:SetColorTexture(0.7, 0.7, 0.7, 0.8)
+            line:SetSize(2, verticalHeight)
+            line:SetPoint("TOPLEFT", parent, "TOPLEFT", fromConnectX - 1, fromConnectY - 10)
+        end
+        
+        -- Ligne horizontale si les cartes ne sont pas alignées verticalement
+        if math.abs(toConnectX - fromConnectX) > 5 then
+            local horizontalLine = parent:CreateTexture(nil, "ARTWORK")
+            horizontalLine:SetColorTexture(0.7, 0.7, 0.7, 0.8)
+            horizontalLine:SetSize(math.abs(toConnectX - fromConnectX), 2)
+            
+            local startX = math.min(fromConnectX, toConnectX)
+            horizontalLine:SetPoint("TOPLEFT", parent, "TOPLEFT", startX, toConnectY - 10)
+            
+            -- Ligne verticale finale vers la carte destinataire
+            local finalVertical = parent:CreateTexture(nil, "ARTWORK")
+            finalVertical:SetColorTexture(0.7, 0.7, 0.7, 0.8)
+            finalVertical:SetSize(2, 10)
+            finalVertical:SetPoint("TOPLEFT", parent, "TOPLEFT", toConnectX - 1, toConnectY - 10)
+        end
+        
+        -- Ajouter une flèche de direction
+        local arrow = parent:CreateTexture(nil, "OVERLAY")
+        arrow:SetSize(8, 8)
+        arrow:SetPoint("TOPLEFT", parent, "TOPLEFT", toConnectX - 4, toConnectY - 5)
+        
+        -- Couleur selon le type de connexion
+        if connectionType == "main-alt" then
+            arrow:SetColorTexture(0.2, 0.8, 0.2, 1) -- Vert pour main->alt
+        elseif connectionType == "alt-bank" then
+            arrow:SetColorTexture(0.8, 0.8, 0.2, 1) -- Jaune pour alt->bank
+        else
+            arrow:SetColorTexture(0.8, 0.8, 0.8, 1) -- Blanc par défaut
+        end
+        
+        return {line = line, arrow = arrow}
     end
     
-    -- Créer une table vide pour placedCards (optionnel pour la nouvelle arborescence)
+    -- Placer les cartes par niveaux et créer les connexions
     local placedCards = {}
     
-    -- Créer l'arborescence latérale simplifiée
-    self:CreateTreeStructure(content, charactersGrouped, placedCards)
+    -- Niveau 1: Personnages Main
+    if #mainCharacters > 0 then
+        local startX = 50
+        for i, charInfo in ipairs(mainCharacters) do
+            local x = startX + (i - 1) * (cardWidth + cardSpacing)
+            local card = CreateCharacterCard(content, charInfo, x, currentY)
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 1, x = x, y = currentY}
+            maxWidth = math.max(maxWidth, x + cardWidth)
+        end
+        currentY = currentY - cardHeight - levelSpacing
+    end
     
-    -- Définir la taille du content pour le scroll
-    content:SetHeight(math.abs(currentY) + 100)  -- Utiliser la valeur absolue de currentY qui est négatif
-    content:SetWidth(maxWidth + 50)
-end
-
--- Fonction pour créer l'arborescence latérale
-function AuberdineExporterUI:CreateTreeStructure(content, charactersGrouped, placedCards)
-    -- Ligne principale verticale à gauche
-    local mainTreeLine = content:CreateTexture(nil, "ARTWORK")
-    mainTreeLine:SetColorTexture(0.6, 0.6, 0.6, 0.8)
-    mainTreeLine:SetWidth(3)
-    mainTreeLine:SetPoint("TOPLEFT", content, "TOPLEFT", 15, -10)
-    mainTreeLine:SetHeight(400) -- Hauteur fixe pour commencer
+    -- Niveau 2: Personnages Alt
+    if #altCharacters > 0 then
+        local startX = 100
+        for i, charInfo in ipairs(altCharacters) do
+            local x = startX + (i - 1) * (cardWidth + cardSpacing)
+            local card = CreateCharacterCard(content, charInfo, x, currentY)
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 2, x = x, y = currentY}
+            maxWidth = math.max(maxWidth, x + cardWidth)
+        end
+        currentY = currentY - cardHeight - levelSpacing
+    end
     
-    -- Titre de l'arborescence
-    local treeTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    treeTitle:SetPoint("TOPLEFT", content, "TOPLEFT", 25, -15)
-    treeTitle:SetText("|cffaaaaff[HIÉRARCHIE]|r")
-    treeTitle:SetTextColor(0.7, 0.7, 0.7)
+    -- Niveau 3: Personnages Banque/Mule
+    if #bankCharacters > 0 then
+        local startX = 150
+        for i, charInfo in ipairs(bankCharacters) do
+            local x = startX + (i - 1) * (cardWidth + cardSpacing)
+            local card = CreateCharacterCard(content, charInfo, x, currentY)
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 3, x = x, y = currentY}
+            maxWidth = math.max(maxWidth, x + cardWidth)
+        end
+        currentY = currentY - cardHeight - levelSpacing
+    end
     
-    -- Créer des indicateurs pour chaque niveau avec des personnages
-    local yOffset = -40
-    local levels = {"main", "alt", "bank", "mule"}
-    local levelNames = {
-        main = "|cff4488ff● MAINS|r",
-        alt = "|cffaa44ff● ALTS|r", 
-        bank = "|cffffaa44● BANQUES|r",
-        mule = "|cffff8844● MULES|r"
-    }
+    -- Niveau 4: Personnages Inconnus
+    if #unknownCharacters > 0 then
+        local startX = 50
+        for i, charInfo in ipairs(unknownCharacters) do
+            local x = startX + (i - 1) * (cardWidth + cardSpacing)
+            local card = CreateCharacterCard(content, charInfo, x, currentY)
+            placedCards[charInfo.key] = {card = card, info = charInfo, level = 4, x = x, y = currentY}
+            maxWidth = math.max(maxWidth, x + cardWidth)
+        end
+        currentY = currentY - cardHeight - 20
+    end
     
-    for i, level in ipairs(levels) do
-        if charactersGrouped[level] and #charactersGrouped[level] > 0 then
-            -- Branche horizontale courte
-            local branch = content:CreateTexture(nil, "ARTWORK")
-            branch:SetColorTexture(0.6, 0.6, 0.6, 0.8)
-            branch:SetHeight(2)
-            branch:SetWidth(15)
-            branch:SetPoint("LEFT", mainTreeLine, "RIGHT", 0, yOffset + 5)
-            
-            -- Étiquette du niveau avec compteur
-            local label = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            label:SetPoint("LEFT", branch, "RIGHT", 5, 0)
-            label:SetText(levelNames[level] .. " (" .. #charactersGrouped[level] .. ")")
-            label:SetTextColor(0.8, 0.8, 0.8)
-            
-            yOffset = yOffset - 25
+    -- Créer les connexions visuelles entre niveaux immédiatement
+    -- en utilisant les positions absolues stockées
+    local function CreateConnections()
+        -- Connexions Main -> Alt
+        for _, mainChar in ipairs(mainCharacters) do
+            for _, altChar in ipairs(altCharacters) do
+                local fromCard = placedCards[mainChar.key]
+                local toCard = placedCards[altChar.key]
+                if fromCard and toCard then
+                    DrawConnection(content, fromCard.card, toCard.card, "main-alt", fromCard.x, fromCard.y, toCard.x, toCard.y)
+                end
+            end
+        end
+        
+        -- Connexions Alt -> Bank/Mule
+        for _, altChar in ipairs(altCharacters) do
+            for _, bankChar in ipairs(bankCharacters) do
+                local fromCard = placedCards[altChar.key]
+                local toCard = placedCards[bankChar.key]
+                if fromCard and toCard then
+                    DrawConnection(content, fromCard.card, toCard.card, "alt-bank", fromCard.x, fromCard.y, toCard.x, toCard.y)
+                end
+            end
+        end
+        
+        -- Connexions Main -> Bank/Mule (si pas d'alt intermédiaire)
+        if #altCharacters == 0 then
+            for _, mainChar in ipairs(mainCharacters) do
+                for _, bankChar in ipairs(bankCharacters) do
+                    local fromCard = placedCards[mainChar.key]
+                    local toCard = placedCards[bankChar.key]
+                    if fromCard and toCard then
+                        DrawConnection(content, fromCard.card, toCard.card, "main-bank", fromCard.x, fromCard.y, toCard.x, toCard.y)
+                    end
+                end
+            end
         end
     end
     
-    -- Ajuster la hauteur de la ligne principale selon le contenu
-    mainTreeLine:SetHeight(math.abs(yOffset) + 40)
+    -- Appeler immédiatement la création des connexions
+    CreateConnections()
+    
+    -- Définir la taille du content pour le scroll
+    content:SetHeight(math.abs(currentY) + 50)
+    content:SetWidth(maxWidth + 50)
 end
