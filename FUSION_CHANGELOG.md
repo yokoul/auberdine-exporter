@@ -1,9 +1,16 @@
-# Fusion de l'interface utilisateur - AuberdineExporter v1.3.3
+# Fusion de l'interface utilisateur - AuberdineExporter v1.3.3a
 
 ## Objectif accompli ✅
-Fusionner la vue de gestion des personnages avec la fenêtre principale pour simplifier l'accès et améliorer l'expérience utilisateur.
+Optimisation complète de l'interface avec cartes compactes, affichage multi-lignes et hiérarchie intégrée dans la sidebar.
 
-## Modifications v1.3.3
+## Modifications v1.3.3a (Optimisation cartes et navigation)
+- **Cartes compactes** : Réduction de 140x80 à 120x70 pixels pour optimiser l'espace
+- **Multi-lignes** : Affichage automatique de 5 cartes par ligne maximum
+- **Hiérarchie déplacée** : Intégration dans la sidebar sous les boutons d'action
+- **Scroll simplifié** : Suppression du scroll horizontal, navigation verticale uniquement
+- **Interface moderne** : Bordures 1px, textes compacts, polices ajustées
+
+## Modifications v1.3.3 (Version précédente)
 - **Interface unifiée** : Fusion complète des deux fenêtres en une seule
 - **Barres de scroll corrigées** : Drag & drop fonctionnel sur les barres de scroll personnalisées
 - **Version mise à jour** : Passage en v1.3.3 avec notes améliorées

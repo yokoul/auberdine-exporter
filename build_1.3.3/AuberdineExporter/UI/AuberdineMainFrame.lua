@@ -55,7 +55,7 @@ function AuberdineExporterUI:CreateMainFrame()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)  -- Adjusted for icon
-    frame.title:SetText("Auberdine Exporter v1.3.3a")
+    frame.title:SetText("Famille d'Auberdine v1.3.3 - Interface Unifiée")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -126,9 +126,6 @@ function AuberdineExporterUI:CreateMainFrame()
         AuberdineExporterUI:ShowHelpPopup()
     end)
     
-    -- Ajouter la hiérarchie dans la sidebar
-    self:CreateSidebarHierarchy(frame.sidebar)
-    
     -- ZONE PRINCIPALE POUR LA VUE DES PERSONNAGES
     frame.mainContent = CreateFrame("Frame", nil, frame)
     frame.mainContent:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 10, 0)
@@ -178,21 +175,29 @@ function AuberdineExporterUI:CreateUnifiedCharacterView(parent)
     scrollFrame:SetPoint("TOPLEFT", 20, -60)
     scrollFrame:SetPoint("BOTTOMRIGHT", -40, 120)  -- Espace pour la légende en bas
     
-    -- Support molette de souris (vertical uniquement avec 5 cartes par ligne)
+    -- Support molette de souris
     scrollFrame:EnableMouseWheel(true)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        -- Scroll vertical uniquement (plus besoin d'horizontal avec 5 cartes max par ligne)
-        local current = self:GetVerticalScroll()
-        local maxScroll = self:GetVerticalScrollRange()
-        local newScroll = math.max(0, math.min(maxScroll, current - (delta * 50)))
-        self:SetVerticalScroll(newScroll)
+        if IsShiftKeyDown() then
+            -- Scroll horizontal avec Shift
+            local currentH = self:GetHorizontalScroll()
+            local maxScrollH = self:GetHorizontalScrollRange()
+            local newScrollH = math.max(0, math.min(maxScrollH, currentH - (delta * 50)))
+            self:SetHorizontalScroll(newScrollH)
+        else
+            -- Scroll vertical normal
+            local current = self:GetVerticalScroll()
+            local maxScroll = self:GetVerticalScrollRange()
+            local newScroll = math.max(0, math.min(maxScroll, current - (delta * 50)))
+            self:SetVerticalScroll(newScroll)
+        end
     end)
     
     local content = CreateFrame("Frame", nil, scrollFrame)
     scrollFrame:SetScrollChild(content)
     
-    -- Créer la barre de scroll verticale uniquement (plus besoin d'horizontale)
-    self:CreateVerticalScrollBar(scrollFrame, characterArea)
+    -- Créer les barres de scroll personnalisées
+    self:CreateScrollBars(scrollFrame, characterArea)
     
     -- Créer l'affichage des cartes personnages
     self:CreateCharacterCardLayout(content, characterArea)
@@ -205,105 +210,7 @@ function AuberdineExporterUI:CreateUnifiedCharacterView(parent)
     characterArea.content = content
 end
 
--- Fonction pour créer seulement la barre de scroll verticale
-function AuberdineExporterUI:CreateVerticalScrollBar(scrollFrame, parent)
-    -- BARRE DE SCROLL VERTICALE
-    local vScrollBar = CreateFrame("Frame", nil, parent)
-    vScrollBar:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 16, 0)
-    vScrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 16, 0)
-    vScrollBar:SetWidth(12)
-    
-    vScrollBar.bg = vScrollBar:CreateTexture(nil, "BACKGROUND")
-    vScrollBar.bg:SetAllPoints()
-    vScrollBar.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-    
-    vScrollBar.thumb = CreateFrame("Button", nil, vScrollBar)
-    vScrollBar.thumb:SetWidth(10)
-    vScrollBar.thumb:SetHeight(30)
-    vScrollBar.thumb:SetPoint("TOP", 0, -1)
-    vScrollBar.thumb:EnableMouse(true)
-    vScrollBar.thumb:RegisterForDrag("LeftButton")
-    
-    vScrollBar.thumb.bg = vScrollBar.thumb:CreateTexture(nil, "ARTWORK")
-    vScrollBar.thumb.bg:SetAllPoints()
-    vScrollBar.thumb.bg:SetColorTexture(0.6, 0.6, 0.6, 1)
-    
-    vScrollBar.thumb.bgHighlight = vScrollBar.thumb:CreateTexture(nil, "HIGHLIGHT")
-    vScrollBar.thumb.bgHighlight:SetAllPoints()
-    vScrollBar.thumb.bgHighlight:SetColorTexture(0.8, 0.8, 0.8, 1)
-    
-    -- Fonctions de mise à jour et d'interaction de la barre de scroll
-    local function UpdateVerticalScrollBar()
-        local maxScroll = scrollFrame:GetVerticalScrollRange()
-        local currentScroll = scrollFrame:GetVerticalScroll()
-        
-        if maxScroll > 0 then
-            vScrollBar:Show()
-            local barHeight = vScrollBar:GetHeight() - 2
-            local thumbHeight = math.max(20, barHeight * (scrollFrame:GetHeight() / (scrollFrame:GetHeight() + maxScroll)))
-            local thumbPos = (currentScroll / maxScroll) * (barHeight - thumbHeight)
-            
-            vScrollBar.thumb:SetHeight(thumbHeight)
-            vScrollBar.thumb:SetPoint("TOP", 0, -1 - thumbPos)
-        else
-            vScrollBar:Hide()
-        end
-    end
-    
-    -- Drag vertical avec correction
-    vScrollBar.thumb:SetScript("OnDragStart", function(self)
-        self.isDragging = true
-        self.startY = select(2, GetCursorPosition()) / self:GetEffectiveScale()
-        self.startScroll = scrollFrame:GetVerticalScroll()
-    end)
-    
-    vScrollBar.thumb:SetScript("OnDragStop", function(self)
-        self.isDragging = false
-    end)
-    
-    vScrollBar.thumb:SetScript("OnUpdate", function(self)
-        if self.isDragging then
-            local currentY = select(2, GetCursorPosition()) / self:GetEffectiveScale()
-            local deltaY = self.startY - currentY
-            local barHeight = vScrollBar:GetHeight() - 2
-            local maxScroll = scrollFrame:GetVerticalScrollRange()
-            
-            if maxScroll > 0 then
-                local thumbHeight = vScrollBar.thumb:GetHeight()
-                local scrollRange = barHeight - thumbHeight
-                if scrollRange > 0 then
-                    local scrollDelta = (deltaY / scrollRange) * maxScroll
-                    local newScroll = math.max(0, math.min(maxScroll, self.startScroll + scrollDelta))
-                    scrollFrame:SetVerticalScroll(newScroll)
-                end
-            end
-        end
-    end)
-    
-    -- Clic sur la barre pour sauter à une position
-    vScrollBar:EnableMouse(true)
-    vScrollBar:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            local cursorY = select(2, GetCursorPosition()) / self:GetEffectiveScale()
-            local barTop = self:GetTop()
-            local barBottom = self:GetBottom()
-            local clickPos = (barTop - cursorY) / (barTop - barBottom)
-            
-            local maxScroll = scrollFrame:GetVerticalScrollRange()
-            local newScroll = math.max(0, math.min(maxScroll, clickPos * maxScroll))
-            scrollFrame:SetVerticalScroll(newScroll)
-        end
-    end)
-    
-    -- Événements pour la barre de scroll
-    scrollFrame:SetScript("OnScrollRangeChanged", UpdateVerticalScrollBar)
-    scrollFrame:SetScript("OnVerticalScroll", UpdateVerticalScrollBar)
-    
-    -- Initialiser l'affichage de la barre
-    C_Timer.After(0.1, UpdateVerticalScrollBar)
-end
-
--- Fonction pour créer les barres de scroll (ancienne fonction conservée pour compatibilité)
+-- Fonction pour créer les barres de scroll
 function AuberdineExporterUI:CreateScrollBars(scrollFrame, parent)
     -- BARRE DE SCROLL VERTICALE
     local vScrollBar = CreateFrame("Frame", nil, parent)
@@ -536,7 +443,7 @@ function AuberdineExporterUI:CreateBottomLegend(parent)
     -- Informations et aide
     local helpText = bottomFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     helpText:SetPoint("TOPLEFT", 10, -35)
-    helpText:SetText("Clic sur groupes = éditer | Coin supérieur droit des cartes = export ON/OFF | 5 cartes par ligne max")
+    helpText:SetText("Clic sur groupes = éditer | Coin supérieur droit des cartes = export ON/OFF | Shift+molette = scroll horizontal")
     helpText:SetTextColor(0.7, 0.7, 0.7)
     
     -- ID de compte
@@ -568,33 +475,9 @@ function AuberdineExporterUI:RefreshCharacterView(frame)
         frame.mainContent.characterContentArea = nil
     end
     
-    -- Nettoyer et recréer la hiérarchie dans la sidebar
-    if frame.sidebar then
-        -- Supprimer les anciens éléments de hiérarchie
-        local children = {frame.sidebar:GetChildren()}
-        for _, child in pairs(children) do
-            if child:GetObjectType() == "FontString" and child:GetText() and child:GetText():find("HIÉRARCHIE") then
-                child:Hide()
-                child:SetParent(nil)
-            end
-        end
-        
-        -- Supprimer les anciennes textures de hiérarchie
-        local regions = {frame.sidebar:GetRegions()}
-        for _, region in pairs(regions) do
-            if region:GetObjectType() == "Texture" and region:GetTexture() then
-                region:Hide()
-                region:SetParent(nil)
-            end
-        end
-        
-        -- Recréer la hiérarchie
-        self:CreateSidebarHierarchy(frame.sidebar)
-    end
-    
     -- Recréer seulement la vue des personnages
     self:CreateUnifiedCharacterView(frame.mainContent)
-    print("|cff00ff00AuberdineExporter:|r Vue des personnages et hiérarchie actualisées !")
+    print("|cff00ff00AuberdineExporter:|r Vue des personnages actualisée !")
 end
 
 function AuberdineExporterUI:ToggleMainFrame()
@@ -1224,7 +1107,7 @@ function AuberdineExporterUI:ShowHelpPopup()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)
-    frame.title:SetText("Aide - Auberdine Exporte v1.3.3a")
+    frame.title:SetText("Aide - Famille d'Auberdine v1.3.3")
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -1257,7 +1140,7 @@ function AuberdineExporterUI:ShowHelpPopup()
     helpText:SetJustifyH("LEFT")
     helpText:SetSpacing(3)
     helpText:SetText(
-        "|cffffcc00=== INTERFACE UNIFIÉE v1.3.3a ===|r\n\n" ..
+        "|cffffcc00=== INTERFACE UNIFIÉE v1.3.3 ===|r\n\n" ..
         
         "|cff77ff77[*] OBJECTIF PRINCIPAL|r\n" ..
         "Gérer vos personnages et exporter vos données de métiers pour auberdine.eu\n\n" ..
@@ -1278,13 +1161,13 @@ function AuberdineExporterUI:ShowHelpPopup()
         "• |cffccccccGroupe|r : Cliquez pour éditer le groupe de compte\n" ..
         "• |cffccccccDropdown central|r : Changez le type de personnage\n" ..
         "• |cffccccccCoin supérieur droit|r : Toggle export ON/OFF (vert/rouge)\n" ..
-        "• |cffccccccLignes de connexion|r : Montrent la hiérarchie Main→Alt→Banque\n" ..
-        "• |cffccccccAffichage multi-lignes|r : 5 cartes maximum par ligne\n\n" ..
+        "• |cffccccccLignes de connexion|r : Montrent la hiérarchie Main→Alt→Banque\n\n" ..
         
         "|cff77ff77[>] NAVIGATION|r\n" ..
         "• |cffccccccMolette souris|r : Scroll vertical\n" ..
-        "• |cffccccccGlisser barre|r : Positionnement précis\n" ..
-        "• |cffccccccClic sur barre|r : Saut rapide à une position\n\n" ..
+        "• |cffccccccShift + Molette|r : Scroll horizontal\n" ..
+        "• |cffccccccGlisser barres|r : Positionnement précis\n" ..
+        "• |cffccccccClic sur barres|r : Saut rapide à une position\n\n" ..
         
         "|cff77ff77[^] EXPORTS DISPONIBLES|r\n" ..
         "• |cff88ff88Export Auberdine|r : Format JSON optimisé pour auberdine.eu\n" ..
@@ -1396,12 +1279,11 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         end
     end
     
-    -- Dimensions des cartes (réduites) - Option 2
-    local cardWidth = 120
-    local cardHeight = 70
-    local cardSpacing = 10
-    local levelSpacing = 80
-    local cardsPerRow = 5  -- Nombre maximum de cartes par ligne
+    -- Dimensions des cartes (réduites)
+    local cardWidth = 140
+    local cardHeight = 80
+    local cardSpacing = 15
+    local levelSpacing = 100
     
     local currentY = -20
     local maxWidth = 0
@@ -1431,48 +1313,48 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         card.border = CreateFrame("Frame", nil, card)
         card.border:SetAllPoints()
         
-        -- Créer une bordure simple avec des textures (bordures fines)
+        -- Créer une bordure simple avec des textures
         card.borderTop = card.border:CreateTexture(nil, "OVERLAY")
         card.borderTop:SetPoint("TOPLEFT", 0, 0)
         card.borderTop:SetPoint("TOPRIGHT", 0, 0)
-        card.borderTop:SetHeight(1)
+        card.borderTop:SetHeight(2)
         card.borderTop:SetColorTexture(1, 1, 1, 0.8)
         
         card.borderBottom = card.border:CreateTexture(nil, "OVERLAY")
         card.borderBottom:SetPoint("BOTTOMLEFT", 0, 0)
         card.borderBottom:SetPoint("BOTTOMRIGHT", 0, 0)
-        card.borderBottom:SetHeight(1)
+        card.borderBottom:SetHeight(2)
         card.borderBottom:SetColorTexture(1, 1, 1, 0.8)
         
         card.borderLeft = card.border:CreateTexture(nil, "OVERLAY")
         card.borderLeft:SetPoint("TOPLEFT", 0, 0)
         card.borderLeft:SetPoint("BOTTOMLEFT", 0, 0)
-        card.borderLeft:SetWidth(1)
+        card.borderLeft:SetWidth(2)
         card.borderLeft:SetColorTexture(1, 1, 1, 0.8)
         
         card.borderRight = card.border:CreateTexture(nil, "OVERLAY")
         card.borderRight:SetPoint("TOPRIGHT", 0, 0)
         card.borderRight:SetPoint("BOTTOMRIGHT", 0, 0)
-        card.borderRight:SetWidth(1)
+        card.borderRight:SetWidth(2)
         card.borderRight:SetColorTexture(1, 1, 1, 0.8)
         
         -- Nom du personnage
-        card.nameText = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        card.nameText:SetPoint("TOP", 0, -6)
+        card.nameText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        card.nameText:SetPoint("TOP", 0, -8)
         card.nameText:SetText(charInfo.data.name)
         card.nameText:SetTextColor(1, 1, 1)
         
-        -- Détails du personnage avec clé de groupe (texte optimisé)
+        -- Détails du personnage avec clé de groupe
         card.detailsText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        card.detailsText:SetPoint("TOP", 0, -18)
+        card.detailsText:SetPoint("TOP", 0, -22)
         card.detailsText:SetText(string.format("Niv %d %s", charInfo.data.level, charInfo.data.class))
         card.detailsText:SetTextColor(0.9, 0.9, 0.9)
         
         -- Affichage du groupe (cliquable pour éditer)
         card.groupText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        card.groupText:SetPoint("TOP", 0, -30)
+        card.groupText:SetPoint("TOP", 0, -35)
         local groupName = charInfo.settings.accountGroup or (AuberdineExporterDB.accountGroup or "Groupe-Auto")
-        card.groupText:SetText("G: " .. groupName)
+        card.groupText:SetText("Groupe: " .. groupName)
         card.groupText:SetTextColor(0.7, 0.7, 0.7)
         
         -- Bouton invisible pour éditer le groupe
@@ -1488,12 +1370,12 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             card.groupText:SetTextColor(0.7, 0.7, 0.7) -- Retour normal
         end)
         
-        -- Dropdown pour le rôle (position ajustée et taille réduite)
+        -- Dropdown pour le rôle (position ajustée)
         card.roleDropdown = CreateFrame("Frame", nil, card, "UIDropDownMenuTemplate")
-        card.roleDropdown:SetPoint("TOP", 0, -48)
-        card.roleDropdown:SetSize(110, 18)
+        card.roleDropdown:SetPoint("TOP", 0, -55)
+        card.roleDropdown:SetSize(120, 20)
         
-        UIDropDownMenu_SetWidth(card.roleDropdown, 110)
+        UIDropDownMenu_SetWidth(card.roleDropdown, 120)
         local roleText = charInfo.type == "main" and "Main" or 
                         charInfo.type == "alt" and "Alt" or
                         charInfo.type == "bank" and "Banque" or
@@ -1538,20 +1420,20 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             end
         end)
         
-        -- Indicateur d'export (taille ajustée)
+        -- Indicateur d'export
         card.exportIcon = card:CreateTexture(nil, "OVERLAY")
-        card.exportIcon:SetSize(10, 10)
-        card.exportIcon:SetPoint("TOPRIGHT", -4, -4)
+        card.exportIcon:SetSize(12, 12)
+        card.exportIcon:SetPoint("TOPRIGHT", -5, -5)
         if charInfo.settings.exportEnabled ~= false then
             card.exportIcon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
         else
             card.exportIcon:SetTexture("Interface\\RaidFrame\\ReadyCheck-NotReady")
         end
         
-        -- Bouton toggle export (taille ajustée)
+        -- Bouton toggle export
         card.exportBtn = CreateFrame("Button", nil, card)
-        card.exportBtn:SetSize(14, 14)
-        card.exportBtn:SetPoint("TOPRIGHT", -4, -4)
+        card.exportBtn:SetSize(16, 16)
+        card.exportBtn:SetPoint("TOPRIGHT", -5, -5)
         card.exportBtn:SetScript("OnClick", function()
             if ToggleCharacterExport then
                 ToggleCharacterExport(charInfo.key)
@@ -1578,7 +1460,7 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         if chars and #chars > 0 then
             -- Afficher le titre du type
             local typeLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            typeLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 20, currentY)
+            typeLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 160, currentY)
             
             if charType == "main" then
                 typeLabel:SetText("|cff4488ff[MAINS]|r")
@@ -1592,130 +1474,30 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             
             currentY = currentY - 25  -- Descendre pour les cartes
             
-            -- Afficher les cartes pour ce type avec gestion multi-lignes
-            local startX = 20 -- Position X de départ pour les cartes (plus d'arborescence dans la zone principale)
-            local currentRow = 0
-            local cardsInCurrentRow = 0
-            
+            -- Afficher les cartes pour ce type
+            local startX = 160 -- Position X de départ pour les cartes
             for i, charInfo in ipairs(chars) do
-                -- Calculer position X et Y pour cette carte
-                local cardX = startX + cardsInCurrentRow * (cardWidth + 10)
-                local cardY = currentY - (currentRow * (cardHeight + 10))
-                
-                local card = CreateCharacterCard(content, charInfo, cardX, cardY)
+                local cardX = startX + (i - 1) * (cardWidth + 10)
+                local card = CreateCharacterCard(content, charInfo, cardX, currentY)
                 maxWidth = math.max(maxWidth, cardX + cardWidth)
-                
-                cardsInCurrentRow = cardsInCurrentRow + 1
-                
-                -- Passer à la ligne suivante si on atteint le maximum par ligne
-                if cardsInCurrentRow >= cardsPerRow then
-                    cardsInCurrentRow = 0
-                    currentRow = currentRow + 1
-                end
             end
             
-            -- Calculer l'espace nécessaire pour ce type (nombre de lignes)
-            local totalRows = currentRow + (cardsInCurrentRow > 0 and 1 or 0)
-            currentY = currentY - (totalRows * (cardHeight + 10)) - 20 -- Espace après les cartes
+            currentY = currentY - cardHeight - 20 -- Espace après les cartes
         end
     end
     
     -- Créer une table vide pour placedCards (optionnel pour la nouvelle arborescence)
     local placedCards = {}
     
-    -- Calculer la largeur optimale selon le nombre maximum de cartes par ligne (sans arborescence)
-    local minWidthNeeded = 20 + (cardsPerRow * cardWidth) + ((cardsPerRow - 1) * 10) + 20 -- Marges simplifiées
-    maxWidth = math.max(maxWidth, minWidthNeeded)
+    -- Créer l'arborescence latérale simplifiée
+    self:CreateTreeStructure(content, charactersGrouped, placedCards)
     
-    -- Définir la taille du content pour le scroll (largeur fixe, plus besoin de scroll horizontal)
+    -- Définir la taille du content pour le scroll
     content:SetHeight(math.abs(currentY) + 100)  -- Utiliser la valeur absolue de currentY qui est négatif
-    content:SetWidth(minWidthNeeded)  -- Largeur fixe calculée pour 5 cartes par ligne
+    content:SetWidth(maxWidth + 50)
 end
 
--- Fonction pour créer la hiérarchie dans la sidebar
-function AuberdineExporterUI:CreateSidebarHierarchy(sidebar)
-    -- Récupérer les données des personnages pour l'affichage
-    if not AuberdineExporterDB or not AuberdineExporterDB.characters then
-        return
-    end
-    
-    -- Organiser les personnages par type (même logique que dans CreateCharacterCardLayout)
-    local charactersGrouped = {main = {}, alt = {}, bank = {}, mule = {}}
-    
-    for charKey, charData in pairs(AuberdineExporterDB.characters) do
-        local charSettings = InitializeCharacterSettings and InitializeCharacterSettings(charKey) or {}
-        local charType = charSettings.characterType or "main"
-        
-        if charType == "main" then
-            table.insert(charactersGrouped.main, {key = charKey, data = charData})
-        elseif charType == "alt" then
-            table.insert(charactersGrouped.alt, {key = charKey, data = charData})
-        elseif charType == "bank" then
-            table.insert(charactersGrouped.bank, {key = charKey, data = charData})
-        elseif charType == "mule" then
-            table.insert(charactersGrouped.mule, {key = charKey, data = charData})
-        end
-    end
-    
-    -- Titre de la hiérarchie
-    local treeTitle = sidebar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    treeTitle:SetPoint("TOP", 0, -240)
-    treeTitle:SetText("|cffaaaaff[HIÉRARCHIE]|r")
-    treeTitle:SetTextColor(0.7, 0.7, 0.7)
-    
-    -- Ligne principale verticale (positionnée juste sous le titre)
-    local mainTreeLine = sidebar:CreateTexture(nil, "ARTWORK")
-    mainTreeLine:SetColorTexture(0.6, 0.6, 0.6, 0.8)
-    mainTreeLine:SetWidth(2)
-    mainTreeLine:SetPoint("TOPLEFT", treeTitle, "BOTTOMLEFT", -20, -5)
-    
-    -- Créer des indicateurs pour chaque niveau avec des personnages
-    local yOffset = -15  -- Commencer plus près du titre
-    local levels = {"main", "alt", "bank", "mule"}
-    local levelNames = {
-        main = "|cff4488ff MAINS|r",
-        alt = "|cffaa44ff ALTS|r", 
-        bank = "|cffffaa44 BANQUES|r",
-        mule = "|cffff8844 MULES|r"
-    }
-    
-    local itemCount = 0
-    local firstItemY = 0
-    local lastItemY = 0
-    
-    for i, level in ipairs(levels) do
-        if charactersGrouped[level] and #charactersGrouped[level] > 0 then
-            -- Enregistrer la position du premier et dernier élément
-            if itemCount == 0 then
-                firstItemY = yOffset
-            end
-            lastItemY = yOffset
-            
-            -- Branche horizontale courte (positionnée relativement au titre, pas à la ligne)
-            local branch = sidebar:CreateTexture(nil, "ARTWORK")
-            branch:SetColorTexture(0.6, 0.6, 0.6, 0.8)
-            branch:SetHeight(1)
-            branch:SetWidth(12)
-            branch:SetPoint("TOPLEFT", treeTitle, "BOTTOMLEFT", -20, yOffset + 2)
-            
-            -- Étiquette du niveau avec compteur (positionnée relativement au titre)
-            local label = sidebar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            label:SetPoint("TOPLEFT", treeTitle, "BOTTOMLEFT", -5, yOffset)
-            label:SetText(levelNames[level] .. " (" .. #charactersGrouped[level] .. ")")
-            label:SetTextColor(0.8, 0.8, 0.8)
-            
-            yOffset = yOffset - 18
-            itemCount = itemCount + 1
-        end
-    end
-    
-    -- Ajuster la hauteur de la ligne principale selon les positions réelles
-    -- Maintenant que les textes sont fixes, calculer la hauteur exacte nécessaire
-    local totalHeight = math.max(math.abs(firstItemY - lastItemY) + 10, 25)
-    mainTreeLine:SetHeight(totalHeight)
-end
-
--- Fonction pour créer l'arborescence latérale (ancienne version, conservée pour compatibilité)
+-- Fonction pour créer l'arborescence latérale
 function AuberdineExporterUI:CreateTreeStructure(content, charactersGrouped, placedCards)
     -- Ligne principale verticale à gauche
     local mainTreeLine = content:CreateTexture(nil, "ARTWORK")
@@ -1734,10 +1516,10 @@ function AuberdineExporterUI:CreateTreeStructure(content, charactersGrouped, pla
     local yOffset = -40
     local levels = {"main", "alt", "bank", "mule"}
     local levelNames = {
-        main = "|cff4488ff MAINS|r",
-        alt = "|cffaa44ff ALTS|r", 
-        bank = "|cffffaa44 BANQUES|r",
-        mule = "|cffff8844 MULES|r"
+        main = "|cff4488ff● MAINS|r",
+        alt = "|cffaa44ff● ALTS|r", 
+        bank = "|cffffaa44● BANQUES|r",
+        mule = "|cffff8844● MULES|r"
     }
     
     for i, level in ipairs(levels) do
