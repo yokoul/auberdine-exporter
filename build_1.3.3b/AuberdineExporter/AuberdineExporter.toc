@@ -1,5 +1,5 @@
 
-## Interface: 11403
+## Interface: 11507
 ## Title: Auberdine Exporter
 ## Notes: Exporte recettes, skills et réputations pour WoW Classic Era (Auberdine.eu) - Interface Unifiée
 ## Author: yokoul - auberdine.eu
