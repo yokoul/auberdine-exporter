@@ -330,7 +330,7 @@ Ce projet est sous **licence MIT**. Voir [LICENSE](./LICENSE) pour plus de déta
 **Fait avec ❤️ pour la communauté WoW Classic Era**
 
 [![auberdine.eu](https://img.shields.io/badge/auberdine.eu-Site%20officiel-blue?style=for-the-badge)](https://auberdine.eu)
-[![Discord](https://img.shields.io/badge/Discord-Communauté-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/auberdine)
+[![Discord](https://img.shields.io/badge/Discord-Communauté-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/qVgtRqSkJz)
 [![CurseForge](https://img.shields.io/badge/CurseForge-Download-orange?style=for-the-badge&logo=curseforge)](https://legacy.curseforge.com/wow/addons/auberdineexporter)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yokoul/auberdine-exporter)
 
