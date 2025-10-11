@@ -174,7 +174,7 @@ graph TD
 {
   "metadata": {
     "addon": "AuberdineExporter",
-    "version": "1.3.1",
+    "version": "1.3.4",
     "clientKey": "auberdine-v1",
     "challenge": "auberdine-2025-recipe-export"
   },
@@ -249,7 +249,13 @@ node test-base64-system.js export.json    # 📋 Analyser un export spécifique
 
 ## 🔄 Historique des versions
 
-### 🚀 Version actuelle : **1.3.1** (Interface française)
+### 🚀 Version actuelle : **1.3.4** (Validation serveur Auberdine)
+- ✅ Validation du serveur : l'addon ne fonctionne que sur Auberdine
+- ✅ Messages d'erreur informatifs sur autres serveurs
+- ✅ Sécurisation de la collecte de données
+- ✅ Optimisation des performances sur serveurs non-supportés
+
+### 📋 **1.3.3b** (Interface française)
 - ✅ Interface entièrement traduite en français
 - ✅ Amélioration de l'ergonomie et du centrage
 - ✅ Icône de fond ab256 dans la zone de texte
@@ -259,7 +265,8 @@ node test-base64-system.js export.json    # 📋 Analyser un export spécifique
 ### 📈 Roadmap
 | Version | Statut | Fonctionnalités |
 |---------|--------|-----------------|
-| **1.3.1** | ✅ **Actuelle** | Interface française, UX améliorée |
+| **1.3.4** | ✅ **Actuelle** | Validation serveur Auberdine |
+| **1.3.3b** | ✅ Stable | Interface française, UX améliorée |
 | **1.3.0** | ✅ Stable | Format Base64 sécurisé |
 | **1.2.x** | 🗃️ Legacy | Format JSON (déprécié) |
 | **1.4.0** | 🚧 Prévue | Synchronisation cloud, backup auto |

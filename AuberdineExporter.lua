@@ -4,6 +4,12 @@
 -- Global addon table
 AuberdineExporter = AuberdineExporter or {}
 
+-- Public function to check if we're on the correct realm
+function AuberdineExporter:IsOnAuberdine()
+    local realmName = GetRealmName()
+    return realmName == "Auberdine" or realmName == "auberdine" or realmName == "AUBERDINE"
+end
+
 -- Function to reset all data
 function AuberdineExporter:ResetAllData()
     if not AuberdineExporterDB or type(AuberdineExporterDB) ~= "table" then
@@ -182,6 +188,11 @@ if not GetSpellIDFromTooltip then
     end
 end
 
+-- Function to validate if we're on the correct realm (Auberdine)
+local function IsValidRealm()
+    return AuberdineExporter:IsOnAuberdine()
+end
+
 local function GetCurrentCharacterKey()
     local playerName = UnitName("player")
     local realmName = GetRealmName()
@@ -189,6 +200,12 @@ local function GetCurrentCharacterKey()
 end
 
 local function InitializeCharacterData()
+    -- Verify we're on the correct realm before initializing any data
+    if not IsValidRealm() then
+        print("|cffff0000AuberdineExporter:|r Cet addon ne fonctionne que sur le serveur Auberdine. Serveur actuel: " .. GetRealmName())
+        return nil
+    end
+    
     local charKey = GetCurrentCharacterKey()
     if not AuberdineExporterDB.characters[charKey] then
         local locale = GetLocale and GetLocale() or "unknown"
@@ -303,7 +320,7 @@ end
 local function GetAddonVersion()
     local addonName = "AuberdineExporter"
     local version = GetAddOnMetadata(addonName, "Version")
-    return version or "1.3.2b" -- Fallback au cas où la lecture échoue
+    return version or "1.3.4" -- Fallback au cas où la lecture échoue
 end
 
 -- Clé client publique pour auberdine.eu
@@ -1692,8 +1709,16 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 AuberdineExporterDB.version = currentVersion
             end
         end
-        InitializeCharacterData()
-        if AuberdineMinimapButton then
+        
+        -- Only proceed with character initialization and other features if we're on Auberdine
+        if not IsValidRealm() then
+            print("|cffff0000AuberdineExporter:|r Addon désactivé - Serveur non supporté: " .. GetRealmName())
+            print("|cffff0000AuberdineExporter:|r Cet addon ne fonctionne que sur le serveur Auberdine.")
+            return
+        end
+        
+        local charKey = InitializeCharacterData()
+        if charKey and AuberdineMinimapButton then
             AuberdineMinimapButton:Initialize()
         end
         
@@ -1745,9 +1770,13 @@ frame:SetScript("OnEvent", function(self, event, ...)
         print("|cff00ff00AuberdineExporter:|r Prêt ! Tapez /auberdine pour les commandes.")
         -- print("|cff00ff00AuberdineExporter:|r Bouton minimap disponible. Utilisez /auberdine scan pour un scan manuel.")
     elseif event == "TRADE_SKILL_SHOW" then
-        OnTradeSkillShow()
+        if IsValidRealm() then
+            OnTradeSkillShow()
+        end
     elseif event == "CRAFT_SHOW" then
-        OnCraftShow()
+        if IsValidRealm() then
+            OnCraftShow()
+        end
     end
 end)
 
@@ -1760,6 +1789,13 @@ end
 
 -- Main slash commands - COMPLETE VERSION with v1.3.2 features
 local function HandleSlashCommand(msg)
+    -- Verify we're on the correct realm before processing any commands
+    if not IsValidRealm() then
+        print("|cffff0000AuberdineExporter:|r Cette commande ne fonctionne que sur le serveur Auberdine.")
+        print("|cffff0000AuberdineExporter:|r Serveur actuel: " .. GetRealmName())
+        return
+    end
+    
     local args = {}
     for word in string.gmatch(msg or "", "%S+") do
         table.insert(args, word)
