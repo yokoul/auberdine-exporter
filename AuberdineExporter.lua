@@ -181,6 +181,98 @@ if not GetCharacterReputations then
     end
 end
 
+-- Equipment slot mapping: WoW slot index → Blizzard API slot type
+local SLOT_MAPPING = {
+    [1]  = { type = "HEAD", name = "Tête" },
+    [2]  = { type = "NECK", name = "Cou" },
+    [3]  = { type = "SHOULDER", name = "Épaule" },
+    [4]  = { type = "SHIRT", name = "Chemise" },
+    [5]  = { type = "CHEST", name = "Torse" },
+    [6]  = { type = "WAIST", name = "Taille" },
+    [7]  = { type = "LEGS", name = "Jambes" },
+    [8]  = { type = "FEET", name = "Pieds" },
+    [9]  = { type = "WRIST", name = "Poignets" },
+    [10] = { type = "HANDS", name = "Mains" },
+    [11] = { type = "FINGER_1", name = "Doigt 1" },
+    [12] = { type = "FINGER_2", name = "Doigt 2" },
+    [13] = { type = "TRINKET_1", name = "Bijou 1" },
+    [14] = { type = "TRINKET_2", name = "Bijou 2" },
+    [15] = { type = "BACK", name = "Dos" },
+    [16] = { type = "MAIN_HAND", name = "Main droite" },
+    [17] = { type = "OFF_HAND", name = "Main gauche" },
+    [18] = { type = "RANGED", name = "Distance" },
+    [19] = { type = "TABARD", name = "Tabard" },
+}
+
+local QUALITY_NAMES = {
+    [0] = "POOR",
+    [1] = "COMMON",
+    [2] = "UNCOMMON",
+    [3] = "RARE",
+    [4] = "EPIC",
+    [5] = "LEGENDARY",
+}
+
+local function GetCharacterEquipment()
+    local equipment = {}
+    for slotIndex, slotInfo in pairs(SLOT_MAPPING) do
+        local itemLink = GetInventoryItemLink("player", slotIndex)
+        if itemLink then
+            local itemId = GetInventoryItemID("player", slotIndex)
+            local itemName, _, itemQuality = GetItemInfo(itemLink)
+            local enchantId = tonumber(itemLink:match("item:%d+:(%d+)"))
+
+            local item = {
+                slot = slotInfo,
+                item = { id = itemId },
+                name = itemName or "Unknown",
+                quality = { type = QUALITY_NAMES[itemQuality] or "COMMON" },
+            }
+
+            if enchantId and enchantId > 0 then
+                item.enchantments = {{ enchantment_id = enchantId, enchantment_slot = { type = "PERMANENT" } }}
+            end
+
+            table.insert(equipment, item)
+        end
+    end
+    return equipment
+end
+
+local function GetCharacterTalents()
+    local talents = {}
+    local numTabs = GetNumTalentTabs()
+    if not numTabs then return talents end
+
+    for tab = 1, numTabs do
+        local tabName, tabIcon, pointsSpent = GetTalentTabInfo(tab)
+        local tabTalents = {}
+        local talentIndex = 1
+
+        while true do
+            local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(tab, talentIndex)
+            if not name then break end
+            table.insert(tabTalents, {
+                name = name,
+                icon = iconTexture,
+                tier = tier,
+                column = column,
+                rank = rank,
+                maxRank = maxRank,
+            })
+            talentIndex = talentIndex + 1
+        end
+
+        table.insert(talents, {
+            specialization_name = tabName,
+            icon = tabIcon,
+            spent_points = pointsSpent,
+            talents = tabTalents,
+        })
+    end
+    return talents
+end
+
 -- Stub pour GetSpellIDFromTooltip si non défini
 if not GetSpellIDFromTooltip then
     function GetSpellIDFromTooltip()
@@ -220,14 +312,18 @@ local function InitializeCharacterData()
             lastUpdate = time(),
             professions = {},
             skills = GetCharacterSkills(),
-            reputations = GetCharacterReputations()
+            reputations = GetCharacterReputations(),
+            equipment = GetCharacterEquipment(),
+            talents = GetCharacterTalents()
         }
         -- Character initialization message disabled for cleaner experience
         -- print("|cff00ff00AuberdineExporter:|r Personnage " .. UnitName("player") .. " initialisé (locale: " .. locale .. ")")
     else
-        -- Mettre à jour skills/réputations à chaque init
+        -- Mettre à jour skills/réputations/equipment/talents à chaque init
         AuberdineExporterDB.characters[charKey].skills = GetCharacterSkills()
         AuberdineExporterDB.characters[charKey].reputations = GetCharacterReputations()
+        AuberdineExporterDB.characters[charKey].equipment = GetCharacterEquipment()
+        AuberdineExporterDB.characters[charKey].talents = GetCharacterTalents()
         AuberdineExporterDB.characters[charKey].lastUpdate = time()
     end
     return charKey
@@ -320,7 +416,7 @@ end
 local function GetAddonVersion()
     local addonName = "AuberdineExporter"
     local version = GetAddOnMetadata(addonName, "Version")
-    return version or "1.3.4" -- Fallback au cas où la lecture échoue
+    return version or "1.4.0" -- Fallback au cas où la lecture échoue
 end
 
 -- Clé client publique pour auberdine.eu
@@ -614,6 +710,51 @@ function ToggleCharacterExport(charKey, enabled)
     print("|cff00ff00AuberdineExporter:|r Export " .. status .. " pour " .. charName)
 end
 
+-- Fonction pour supprimer complètement un personnage de la base de données
+function DeleteCharacter(charKey, suppressMessage)
+    if not charKey or not AuberdineExporterDB or not AuberdineExporterDB.characters then
+        if not suppressMessage then
+            print("|cffff0000AuberdineExporter:|r Erreur - Base de données non initialisée")
+        end
+        return false
+    end
+    
+    local charData = AuberdineExporterDB.characters[charKey]
+    if not charData then
+        if not suppressMessage then
+            print("|cffff0000AuberdineExporter:|r Personnage non trouvé: " .. (charKey or "nil"))
+        end
+        return false
+    end
+    
+    local charName = charData.name or charKey
+    
+    -- Supprimer de la table des personnages
+    AuberdineExporterDB.characters[charKey] = nil
+    
+    -- Supprimer des paramètres de personnage
+    if AuberdineExporterDB.characterSettings and AuberdineExporterDB.characterSettings[charKey] then
+        AuberdineExporterDB.characterSettings[charKey] = nil
+    end
+    
+    -- Supprimer des liens de compte
+    if AuberdineExporterDB.accountLinks then
+        AuberdineExporterDB.accountLinks[charKey] = nil
+        -- Supprimer aussi les références dans les autres liens
+        for otherCharKey, linkData in pairs(AuberdineExporterDB.accountLinks) do
+            if linkData.mainCharacter == charKey then
+                AuberdineExporterDB.accountLinks[otherCharKey].mainCharacter = nil
+            end
+        end
+    end
+    
+    if not suppressMessage then
+        print("|cff00ff00AuberdineExporter:|r Personnage '" .. charName .. "' supprimé définitivement")
+    end
+    
+    return true
+end
+
 -- Fonction pour obtenir la liste des personnages à exporter
 function GetExportableCharacters()
     local exportableChars = {}
@@ -786,7 +927,13 @@ function ExportToJSON()
                 skills = charData.skills or {},
                 
                 -- Réputations de ce personnage
-                reputations = charData.reputations or {}
+                reputations = charData.reputations or {},
+
+                -- Équipement du personnage
+                equipment = charData.equipment or {},
+
+                -- Talents du personnage
+                talents = charData.talents or {}
             }
             
             -- Ajouter localisation si c'est le personnage connecté
@@ -1647,6 +1794,8 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("TRADE_SKILL_SHOW")
 frame:RegisterEvent("CRAFT_SHOW")
+frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -1777,6 +1926,22 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if IsValidRealm() then
             OnCraftShow()
         end
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        if IsValidRealm() then
+            local charKey = GetCurrentCharacterKey()
+            if charKey and AuberdineExporterDB.characters[charKey] then
+                AuberdineExporterDB.characters[charKey].equipment = GetCharacterEquipment()
+                AuberdineExporterDB.characters[charKey].lastUpdate = time()
+            end
+        end
+    elseif event == "CHARACTER_POINTS_CHANGED" then
+        if IsValidRealm() then
+            local charKey = GetCurrentCharacterKey()
+            if charKey and AuberdineExporterDB.characters[charKey] then
+                AuberdineExporterDB.characters[charKey].talents = GetCharacterTalents()
+                AuberdineExporterDB.characters[charKey].lastUpdate = time()
+            end
+        end
     end
 end)
 
@@ -1876,6 +2041,59 @@ local function HandleSlashCommand(msg)
             print("|cff00ff00AuberdineExporter:|r Scan terminé ! " .. count .. " métiers trouvés.")
             if mainFrame and mainFrame:IsShown() then
                 mainFrame:UpdateContent()
+            end
+        end
+    elseif command == "delete" or command == "remove" then
+        local charToDelete = args[2]
+        if not charToDelete then
+            print("|cffff0000AuberdineExporter:|r Usage: /auberdine delete <nom-serveur>")
+            print("|cffff0000AuberdineExporter:|r Exemple: /auberdine delete Toto-Auberdine")
+            print("|cffff0000AuberdineExporter:|r |cffff8000ATTENTION:|r Cette action supprime définitivement le personnage !")
+            return
+        end
+        
+        -- Vérifier si le personnage existe
+        if not AuberdineExporterDB or not AuberdineExporterDB.characters then
+            print("|cffff0000AuberdineExporter:|r Base de données non initialisée")
+            return
+        end
+        
+        local found = false
+        local exactKey = nil
+        local charName = nil
+        
+        -- Chercher le personnage (soit par clé exacte, soit par nom)
+        for charKey, charData in pairs(AuberdineExporterDB.characters) do
+            if charKey == charToDelete or (charData.name and charData.name:lower() == charToDelete:lower()) then
+                exactKey = charKey
+                charName = charData.name
+                found = true
+                break
+            end
+        end
+        
+        if not found then
+            print("|cffff0000AuberdineExporter:|r Personnage non trouvé: " .. charToDelete)
+            print("|cffff8000AuberdineExporter:|r Utilisez /auberdine chars pour voir la liste")
+            return
+        end
+        
+        -- Demander confirmation
+        print("|cffff0000AuberdineExporter:|r ATTENTION: Voulez-vous vraiment supprimer '" .. charName .. "' ?")
+        print("|cffff0000AuberdineExporter:|r Tapez: /auberdine delete " .. charToDelete .. " confirm")
+        print("|cffff8000AuberdineExporter:|r Cette action est IRRÉVERSIBLE !")
+        
+        if args[3] == "confirm" then
+            if DeleteCharacter(exactKey) then
+                print("|cff00ff00AuberdineExporter:|r Personnage '" .. charName .. "' supprimé avec succès")
+                -- Actualiser l'interface si elle est ouverte
+                if AuberdineExporterUI and AuberdineExporterUI.mainFrame and AuberdineExporterUI.mainFrame:IsShown() then
+                    C_Timer.After(0.1, function()
+                        AuberdineExporterUI:RefreshCharacterView(AuberdineExporterUI.mainFrame)
+                    end)
+                end
+            else
+                print("|cffff0000AuberdineExporter:|r Erreur lors de la suppression")
             end
         end
     elseif command == "recipes" then
@@ -2093,6 +2311,7 @@ local function HandleSlashCommand(msg)
         print("  /auberdine linkto <mainCharacter> - Lier au personnage principal")
         print("  /auberdine account <groupName> - Définir le groupe de compte")
         print("  /auberdine export <enable|disable> - Activer/désactiver l'export")
+        print("  /auberdine delete <nom-serveur> confirm - |cffff0000SUPPRIMER|r définitivement un personnage")
         print("")
         print("|cffff8000=== GESTION DES GROUPES MULTI-COMPTES ===|r")
         print("  /auberdine accountkey [nouvelle_clé] - Afficher ou définir votre clé d'identification unique")
