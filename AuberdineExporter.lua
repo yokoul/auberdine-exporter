@@ -245,7 +245,7 @@ local function GetCharacterTalents()
     if not numTabs then return talents end
 
     for tab = 1, numTabs do
-        local tabName, tabIcon, pointsSpent = GetTalentTabInfo(tab)
+        local tabId, tabName, tabDescription, tabIcon, pointsSpent = GetTalentTabInfo(tab)
         local tabTalents = {}
         local talentIndex = 1
 
