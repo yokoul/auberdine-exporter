@@ -177,7 +177,7 @@ function AuberdineExporterUI:CreateMainFrame()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)  -- Adjusted for icon
-    frame.title:SetText("Auberdine Exporter v1.3.3b")
+    frame.title:SetText("Auberdine Exporter v" .. (GetAddOnMetadata("AuberdineExporter", "Version") or "1.4.0"))
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -1341,6 +1341,39 @@ StaticPopupDialogs["AUBERDINE_EXPORTER_CLEAR_CONFIRM"] = {
     preferredIndex = 3,
 }
 
+-- Static popup for character deletion confirmation
+StaticPopupDialogs["AUBERDINE_EXPORTER_DELETE_CHAR_CONFIRM"] = {
+    text = "ATTENTION : Supprimer définitivement le personnage '%s' ?\n\n|cffff0000Cette action est IRRÉVERSIBLE !|r\n\nToutes les données (recettes, skills, réputations) seront perdues.\n\nPour simplement désactiver l'export, utilisez le bouton vert/rouge.",
+    button1 = "SUPPRIMER",
+    button2 = "Annuler",
+    OnAccept = function(self)
+        local data = self.data
+        if data and data.callback then
+            data.callback()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Fonction pour afficher la confirmation de suppression de personnage
+function AuberdineExporterUI:ShowDeleteConfirmation(charKey, charName, callback)
+    if not charKey or not charName or not callback then
+        print("|cffff0000AuberdineExporter:|r Erreur - Données manquantes pour la suppression")
+        return
+    end
+    
+    local popupData = {
+        charKey = charKey,
+        charName = charName,
+        callback = callback
+    }
+    
+    StaticPopup_Show("AUBERDINE_EXPORTER_DELETE_CHAR_CONFIRM", charName, nil, popupData)
+end
+
 -- NOUVEAU v1.3.2b: Fenêtre de gestion des personnages
 function AuberdineExporterUI:ShowGroupEditPopup(charKey, currentGroup)
     -- Créer une table avec les données nécessaires
@@ -1406,7 +1439,7 @@ function AuberdineExporterUI:ShowHelpPopup()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)
-    frame.title:SetText("Aide - Auberdine Exporte v1.3.3a")
+    frame.title:SetText("Aide - Auberdine Exporter v" .. (GetAddOnMetadata("AuberdineExporter", "Version") or "1.4.0"))
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -1439,7 +1472,7 @@ function AuberdineExporterUI:ShowHelpPopup()
     helpText:SetJustifyH("LEFT")
     helpText:SetSpacing(3)
     helpText:SetText(
-        "|cffffcc00=== INTERFACE UNIFIÉE v1.3.3a ===|r\n\n" ..
+        "|cffffcc00=== INTERFACE UNIFIÉE v1.4.0 ===|r\n\n" ..
         
         "|cff77ff77[*] OBJECTIF PRINCIPAL|r\n" ..
         "Gérer vos personnages et exporter vos données de métiers pour auberdine.eu\n\n" ..
@@ -1745,6 +1778,39 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
                     card.exportIcon:SetTexture("Interface\\RaidFrame\\ReadyCheck-NotReady")
                 end
             end
+        end)
+        
+        -- Bouton de suppression (croix rouge)
+        card.deleteIcon = card:CreateTexture(nil, "OVERLAY")
+        card.deleteIcon:SetSize(12, 12)
+        card.deleteIcon:SetPoint("TOPRIGHT", -20, -4)
+        card.deleteIcon:SetTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+        card.deleteIcon:SetVertexColor(1, 0.3, 0.3) -- Rouge
+        
+        card.deleteBtn = CreateFrame("Button", nil, card)
+        card.deleteBtn:SetSize(16, 16)
+        card.deleteBtn:SetPoint("TOPRIGHT", -20, -4)
+        card.deleteBtn:SetScript("OnClick", function()
+            -- Demander confirmation avant suppression
+            AuberdineExporterUI:ShowDeleteConfirmation(charInfo.key, charInfo.data.name, function()
+                if DeleteCharacter then
+                    DeleteCharacter(charInfo.key)
+                    -- Actualiser l'affichage
+                    C_Timer.After(0.1, function()
+                        if parentFrame and parentFrame.UpdateContent then
+                            parentFrame.UpdateContent()
+                        elseif AuberdineExporterUI and AuberdineExporterUI.mainFrame then
+                            AuberdineExporterUI:RefreshCharacterView(AuberdineExporterUI.mainFrame)
+                        end
+                    end)
+                end
+            end)
+        end)
+        card.deleteBtn:SetScript("OnEnter", function()
+            card.deleteIcon:SetVertexColor(1, 0.1, 0.1) -- Rouge plus intense au survol
+        end)
+        card.deleteBtn:SetScript("OnLeave", function()
+            card.deleteIcon:SetVertexColor(1, 0.3, 0.3) -- Rouge normal
         end)
         
         return card
