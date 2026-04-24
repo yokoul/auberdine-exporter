@@ -1656,9 +1656,9 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
     
     -- Dimensions des cartes (réduites) - Option 2
     local cardWidth = 120
-    local cardHeight = 88            -- v1.5.0 : bumpé +18 pour le compteur quêtes
+    local cardHeight = 100           -- v1.5.0 : bumpé pour accueillir le compteur quêtes sous le dropdown
     local cardSpacing = 10
-    local levelSpacing = 98          -- = cardHeight + cardSpacing (conserve le gap visuel)
+    local levelSpacing = 110         -- = cardHeight + cardSpacing (conserve le gap visuel)
     local cardsPerRow = 5  -- Nombre maximum de cartes par ligne
     
     local currentY = -20
@@ -1802,7 +1802,10 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             questCountInit = questCountInit + 1
         end
         card.questText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        card.questText:SetPoint("TOP", 0, -70)
+        -- Ancré BOTTOM pour être robuste à la vraie hauteur du dropdown (le template
+        -- UIDropDownMenuTemplate a des textures décoratives qui débordent de sa
+        -- height déclarée de 18px — visuellement ~30px).
+        card.questText:SetPoint("BOTTOM", 0, 6)
         card.questText:SetText(string.format("Quêtes : %d", questCountInit))
         card.questText:SetTextColor(0.7, 0.85, 1)
 
