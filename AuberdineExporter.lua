@@ -314,7 +314,10 @@ local function InitializeCharacterData()
             skills = GetCharacterSkills(),
             reputations = GetCharacterReputations(),
             equipment = GetCharacterEquipment(),
-            talents = GetCharacterTalents()
+            talents = GetCharacterTalents(),
+            -- Quêtes terminées (populées par ReconcileCompletedQuests + event QUEST_TURNED_IN).
+            -- Format: { ["questID"] = timestamp }
+            completedQuests = {}
         }
         -- Character initialization message disabled for cleaner experience
         -- print("|cff00ff00AuberdineExporter:|r Personnage " .. UnitName("player") .. " initialisé (locale: " .. locale .. ")")
@@ -325,8 +328,44 @@ local function InitializeCharacterData()
         AuberdineExporterDB.characters[charKey].equipment = GetCharacterEquipment()
         AuberdineExporterDB.characters[charKey].talents = GetCharacterTalents()
         AuberdineExporterDB.characters[charKey].lastUpdate = time()
+        -- Assurer la présence du champ pour les chars créés avant la v1.5.0
+        AuberdineExporterDB.characters[charKey].completedQuests =
+            AuberdineExporterDB.characters[charKey].completedQuests or {}
     end
     return charKey
+end
+
+-- Reconcile completed quests with the client's authoritative list (GetQuestsCompleted).
+-- Appelé à CHAQUE PLAYER_LOGIN, pas juste au premier — pour couvrir les cas où :
+--   - l'addon a été désactivé pendant un moment
+--   - le joueur a joué sur un autre PC sans l'addon (voyage, portable)
+--   - un reload a raté un QUEST_TURNED_IN
+--
+-- Les quêtes déjà connues conservent leur timestamp d'origine (plus précis narrativement).
+-- Les quêtes manquantes sont ajoutées avec time() en best-effort.
+local function ReconcileCompletedQuests(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    if not GetQuestsCompleted then return 0 end
+
+    local charData = AuberdineExporterDB.characters[charKey]
+    charData.completedQuests = charData.completedQuests or {}
+
+    local bag = {}
+    GetQuestsCompleted(bag)
+    local now = time()
+    local added = 0
+
+    for questID, isDone in pairs(bag) do
+        if isDone then
+            local key = tostring(questID)
+            if not charData.completedQuests[key] then
+                charData.completedQuests[key] = now
+                added = added + 1
+            end
+        end
+    end
+
+    return added
 end
 
 -- Scan all character professions (including gathering)
@@ -933,7 +972,11 @@ function ExportToJSON()
                 equipment = charData.equipment or {},
 
                 -- Talents du personnage
-                talents = charData.talents or {}
+                talents = charData.talents or {},
+
+                -- Quêtes terminées (v1.5.0) — map { "questID" = timestamp }
+                -- Alimentée par ReconcileCompletedQuests au PLAYER_LOGIN + event QUEST_TURNED_IN.
+                completedQuests = charData.completedQuests or {}
             }
             
             -- Ajouter localisation si c'est le personnage connecté
@@ -1796,6 +1839,7 @@ frame:RegisterEvent("TRADE_SKILL_SHOW")
 frame:RegisterEvent("CRAFT_SHOW")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
+frame:RegisterEvent("QUEST_TURNED_IN")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -1870,6 +1914,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if charKey and AuberdineMinimapButton then
             AuberdineMinimapButton:Initialize()
         end
+
+        -- Reconcile avec GetQuestsCompleted — ajoute les quêtes rendues hors-addon
+        -- (ordi portable, addon désactivé, etc.). Les timestamps existants sont préservés.
+        if charKey then
+            ReconcileCompletedQuests(charKey)
+        end
         
         -- MIGRATION v1.3.2: Remplacer "default" par un nom unique généré
         if AuberdineExporterDB.accountGroup == "default" or not AuberdineExporterDB.accountGroup then
@@ -1940,6 +1990,20 @@ frame:SetScript("OnEvent", function(self, event, ...)
             if charKey and AuberdineExporterDB.characters[charKey] then
                 AuberdineExporterDB.characters[charKey].talents = GetCharacterTalents()
                 AuberdineExporterDB.characters[charKey].lastUpdate = time()
+            end
+        end
+    elseif event == "QUEST_TURNED_IN" then
+        -- arg1 = questID (vanilla API). Tiré dès qu'une quête est rendue au NPC.
+        if IsValidRealm() then
+            local questID = ...
+            if questID and questID > 0 then
+                local charKey = GetCurrentCharacterKey()
+                local charData = charKey and AuberdineExporterDB.characters[charKey]
+                if charData then
+                    charData.completedQuests = charData.completedQuests or {}
+                    charData.completedQuests[tostring(questID)] = time()
+                    charData.lastUpdate = time()
+                end
             end
         end
     end
