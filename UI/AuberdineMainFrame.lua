@@ -1268,6 +1268,28 @@ function AuberdineExporterUI:ShowExportFrame(exportType)
     AuberdineExportUI:ShowExportFrame(exportType)
 end
 
+-- Récupère l'EditBox d'un StaticPopup de façon robuste.
+-- Dans les clients récents (Classic ERA 11508+), Blizzard wrap StaticPopup
+-- avec GameDialog et `self.editBox` n'est plus toujours directement exposé.
+local function GetPopupEditBox(popup)
+    if not popup then return nil end
+    if popup.editBox then return popup.editBox end
+    if popup.GetEditBox then
+        local ok, eb = pcall(popup.GetEditBox, popup)
+        if ok and eb then return eb end
+    end
+    -- Fallback : chercher un EditBox parmi les enfants directs
+    if popup.GetNumChildren then
+        for i = 1, popup:GetNumChildren() do
+            local child = select(i, popup:GetChildren())
+            if child and child.GetObjectType and child:GetObjectType() == "EditBox" then
+                return child
+            end
+        end
+    end
+    return nil
+end
+
 -- Static popup pour éditer le groupe d'un personnage
 StaticPopupDialogs["AUBERDINE_EDIT_GROUP"] = {
     text = "Changer le groupe de %s\nGroupe actuel: %s",
@@ -1282,21 +1304,25 @@ StaticPopupDialogs["AUBERDINE_EDIT_GROUP"] = {
         -- Ajuster les niveaux d'affichage
         self:SetFrameStrata("TOOLTIP")
         self:SetFrameLevel(200)
-        
+
         -- data est maintenant une table {charKey = "...", currentGroup = "..."}
-        if data and data.currentGroup then
-            self.editBox:SetText(data.currentGroup)
-            self.editBox:HighlightText()
-        else
-            self.editBox:SetText("")
+        local editBox = GetPopupEditBox(self)
+        if editBox then
+            if data and data.currentGroup then
+                editBox:SetText(data.currentGroup)
+                editBox:HighlightText()
+            else
+                editBox:SetText("")
+            end
         end
     end,
     OnAccept = function(self, data)
-        local newGroup = self.editBox:GetText()
+        local editBox = GetPopupEditBox(self)
+        local newGroup = editBox and editBox:GetText() or nil
         if newGroup and newGroup ~= "" and data and data.charKey then
             if SetAccountGroup then
                 SetAccountGroup(data.charKey, newGroup)
-                print(string.format("|cff00ff00AuberdineExporter:|r Groupe de %s changé vers '%s'", 
+                print(string.format("|cff00ff00AuberdineExporter:|r Groupe de %s changé vers '%s'",
                     AuberdineExporterDB.characters[data.charKey] and AuberdineExporterDB.characters[data.charKey].name or data.charKey, newGroup))
                 -- Recharger l'interface
                 if AuberdineExporterUI.charConfigFrame then
@@ -1307,10 +1333,12 @@ StaticPopupDialogs["AUBERDINE_EDIT_GROUP"] = {
         end
     end,
     EditBoxOnEnterPressed = function(self, data)
-        StaticPopup_OnClick(self:GetParent(), 1)
+        local parent = self:GetParent()
+        if parent then StaticPopup_OnClick(parent, 1) end
     end,
     EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
+        local parent = self:GetParent()
+        if parent then parent:Hide() end
     end,
     preferredIndex = 3,
 }
@@ -1827,7 +1855,54 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         card.deleteBtn:SetScript("OnLeave", function()
             card.deleteIcon:SetVertexColor(1, 0.3, 0.3) -- Rouge normal
         end)
-        
+
+        -- Tooltip détaillé au hover de la carte (v1.5.0 : expose le détail
+        -- quêtes/métiers/recettes sans rajouter de lignes sur le layout compact).
+        card:EnableMouse(true)
+        card:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(charInfo.data.name, 1, 1, 1)
+            GameTooltip:AddLine(string.format("Niv %d %s %s",
+                charInfo.data.level or 0,
+                charInfo.data.race or "?",
+                charInfo.data.class or "?"), 0.9, 0.9, 0.9)
+
+            -- Quêtes terminées
+            local questCount = 0
+            for _ in pairs(charInfo.data.completedQuests or {}) do
+                questCount = questCount + 1
+            end
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(string.format("Quêtes terminées : %d", questCount), 0.7, 0.85, 1)
+
+            -- Métiers et recettes
+            local profCount, recipeTotal = 0, 0
+            for profName, profData in pairs(charInfo.data.professions or {}) do
+                profCount = profCount + 1
+                local rc = 0
+                for _ in pairs(profData.recipes or {}) do rc = rc + 1 end
+                recipeTotal = recipeTotal + rc
+                GameTooltip:AddLine(string.format("  %s : %d/%d (%d recettes)",
+                    profData.name or profName,
+                    profData.level or 0, profData.maxLevel or 0, rc), 0.5, 1, 0.5)
+            end
+            if profCount == 0 then
+                GameTooltip:AddLine("Aucun métier scanné", 0.6, 0.6, 0.6)
+            end
+
+            -- Dernière màj
+            if charInfo.data.lastUpdate then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Dernière mise à jour : " ..
+                    date("%Y-%m-%d %H:%M", charInfo.data.lastUpdate), 0.6, 0.6, 0.6)
+            end
+
+            GameTooltip:Show()
+        end)
+        card:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+
         return card
     end
     
