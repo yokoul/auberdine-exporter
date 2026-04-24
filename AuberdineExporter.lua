@@ -343,9 +343,12 @@ end
 --
 -- Les quêtes déjà connues conservent leur timestamp d'origine (plus précis narrativement).
 -- Les quêtes manquantes sont ajoutées avec time() en best-effort.
+-- Retourne { added, total } pour affichage.
 local function ReconcileCompletedQuests(charKey)
-    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
-    if not GetQuestsCompleted then return 0 end
+    if not charKey or not AuberdineExporterDB.characters[charKey] then
+        return { added = 0, total = 0 }
+    end
+    if not GetQuestsCompleted then return { added = 0, total = 0 } end
 
     local charData = AuberdineExporterDB.characters[charKey]
     charData.completedQuests = charData.completedQuests or {}
@@ -365,7 +368,10 @@ local function ReconcileCompletedQuests(charKey)
         end
     end
 
-    return added
+    local total = 0
+    for _ in pairs(charData.completedQuests) do total = total + 1 end
+
+    return { added = added, total = total }
 end
 
 -- Scan all character professions (including gathering)
@@ -422,6 +428,7 @@ function GetStatistics()
         totalCharacters = 0,
         totalProfessions = 0,
         totalRecipes = 0,
+        totalQuests = 0,
         professionBreakdown = {}
     }
     if not AuberdineExporterDB.characters or type(AuberdineExporterDB.characters) ~= "table" then
@@ -429,6 +436,11 @@ function GetStatistics()
     end
     for charKey, charData in pairs(AuberdineExporterDB.characters) do
         stats.totalCharacters = stats.totalCharacters + 1
+        if charData.completedQuests then
+            for _ in pairs(charData.completedQuests) do
+                stats.totalQuests = stats.totalQuests + 1
+            end
+        end
         if charData.professions then
             for profName, profData in pairs(charData.professions) do
                 stats.totalProfessions = stats.totalProfessions + 1
@@ -1918,7 +1930,16 @@ frame:SetScript("OnEvent", function(self, event, ...)
         -- Reconcile avec GetQuestsCompleted — ajoute les quêtes rendues hors-addon
         -- (ordi portable, addon désactivé, etc.). Les timestamps existants sont préservés.
         if charKey then
-            ReconcileCompletedQuests(charKey)
+            local questStats = ReconcileCompletedQuests(charKey)
+            if questStats.added > 0 then
+                print(string.format(
+                    "|cff00ff00AuberdineExporter:|r %d nouvelle(s) quête(s) détectée(s) (total: %d)",
+                    questStats.added, questStats.total))
+            elseif questStats.total > 0 then
+                print(string.format(
+                    "|cff00ff00AuberdineExporter:|r %d quête(s) terminée(s) suivie(s)",
+                    questStats.total))
+            end
         end
         
         -- MIGRATION v1.3.2: Remplacer "default" par un nom unique généré

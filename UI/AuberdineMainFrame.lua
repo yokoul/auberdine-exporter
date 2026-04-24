@@ -857,7 +857,7 @@ function AuberdineExporterUI:CreateOverviewTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints()
     
-    local stats = GetStatistics and GetStatistics() or {totalCharacters = 0, totalProfessions = 0, totalRecipes = 0}
+    local stats = GetStatistics and GetStatistics() or {totalCharacters = 0, totalProfessions = 0, totalRecipes = 0, totalQuests = 0}
     
     -- Statistics display
     local yOffset = -10
@@ -906,12 +906,13 @@ function AuberdineExporterUI:CreateOverviewTab(parent)
     statsText:SetPoint("TOPLEFT", 10, yOffset)
     statsText:SetJustifyH("LEFT")
     statsText:SetText(string.format(
-        "Total Characters: %d\nTotal Professions: %d\nTotal Recipes: %d",
+        "Total Characters: %d\nTotal Professions: %d\nTotal Recipes: %d\nTotal Quests: %d",
         stats.totalCharacters,
         stats.totalProfessions,
-        stats.totalRecipes
+        stats.totalRecipes,
+        stats.totalQuests or 0
     ))
-    yOffset = yOffset - 70
+    yOffset = yOffset - 85
     
     -- Profession breakdown
     if stats.totalProfessions > 0 then
@@ -1032,7 +1033,21 @@ function AuberdineExporterUI:CreateCharactersTab(parent)
             professions:SetText("Professions: " .. profText)
             professions:SetTextColor(0.5, 1, 0.5)
         end
-        
+
+        -- Quêtes terminées (v1.5.0)
+        local questCount = 0
+        for _ in pairs(characterData.completedQuests or {}) do
+            questCount = questCount + 1
+        end
+        if questCount > 0 then
+            local quests = charFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            quests:SetPoint("TOPLEFT", 200, -25)
+            quests:SetPoint("TOPRIGHT", -10, -25)
+            quests:SetJustifyH("LEFT")
+            quests:SetText(string.format("Quêtes terminées : %d", questCount))
+            quests:SetTextColor(0.7, 0.85, 1)
+        end
+
         yOffset = yOffset - rowHeight - 5
     end
     
