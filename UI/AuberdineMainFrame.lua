@@ -1656,9 +1656,9 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
     
     -- Dimensions des cartes (réduites) - Option 2
     local cardWidth = 120
-    local cardHeight = 70
+    local cardHeight = 88            -- v1.5.0 : bumpé +18 pour le compteur quêtes
     local cardSpacing = 10
-    local levelSpacing = 80
+    local levelSpacing = 98          -- = cardHeight + cardSpacing (conserve le gap visuel)
     local cardsPerRow = 5  -- Nombre maximum de cartes par ligne
     
     local currentY = -20
@@ -1796,6 +1796,16 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             end
         end)
         
+        -- Compteur quêtes terminées (v1.5.0) — positionné sous le dropdown rôle.
+        local questCountInit = 0
+        for _ in pairs(charInfo.data.completedQuests or {}) do
+            questCountInit = questCountInit + 1
+        end
+        card.questText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        card.questText:SetPoint("TOP", 0, -70)
+        card.questText:SetText(string.format("Quêtes : %d", questCountInit))
+        card.questText:SetTextColor(0.7, 0.85, 1)
+
         -- Indicateur d'export (taille ajustée)
         card.exportIcon = card:CreateTexture(nil, "OVERLAY")
         card.exportIcon:SetSize(10, 10)
