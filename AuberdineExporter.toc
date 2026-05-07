@@ -3,7 +3,7 @@
 ## Title: Auberdine Exporter
 ## Notes: Exporte recettes, skills, réputations, équipement et consommables pour WoW Classic Era (Auberdine.eu)
 ## Author: yokoul - auberdine.eu
-## Version: 1.4.0
+## Version: 1.4.1
 ## SavedVariables: AuberdineExporterDB
 ## IconTexture: Interface/AddOns/AuberdineExporter/UI/Icons/ab64.png
 

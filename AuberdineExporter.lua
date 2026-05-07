@@ -320,7 +320,7 @@ end
 local function GetAddonVersion()
     local addonName = "AuberdineExporter"
     local version = GetAddOnMetadata(addonName, "Version")
-    return version or "1.4.0" -- Fallback au cas où la lecture échoue
+    return version or "1.4.1" -- Fallback au cas où la lecture échoue
 end
 
 -- Clé client publique pour auberdine.eu
@@ -958,6 +958,156 @@ local function RecomputeConsumables(charKey)
     return count
 end
 
+-- =====================================================================
+-- ===== SNAPSHOT LOCAL BRUT (sacs + banque)
+-- =====================================================================
+-- Ces données sont stockées UNIQUEMENT dans la SavedVariable locale,
+-- destinées à être consommées par un client Electron local.
+-- Elles ne sont PAS incluses dans les exports JSON envoyés à auberdine.eu.
+-- =====================================================================
+
+local function ExtractItemString(itemLink)
+    if not itemLink then return nil end
+    return string.match(itemLink, "item[%-?%d:]+")
+end
+
+-- Capture l'intégralité des champs disponibles pour un slot donné
+local function CaptureRawSlot(bagId, slot)
+    local link = GetBagItemLink(bagId, slot)
+    if not link then return nil end
+
+    local raw = {
+        bag = bagId,
+        slot = slot,
+        link = link,
+        itemString = ExtractItemString(link),
+    }
+
+    if C_Container and C_Container.GetContainerItemInfo then
+        local info = C_Container.GetContainerItemInfo(bagId, slot)
+        if info then
+            raw.iconFileID = info.iconFileID
+            raw.stackCount = info.stackCount
+            raw.isLocked = info.isLocked
+            raw.quality = info.quality
+            raw.isReadable = info.isReadable
+            raw.hasLoot = info.hasLoot
+            raw.hyperlink = info.hyperlink
+            raw.isFiltered = info.isFiltered
+            raw.hasNoValue = info.hasNoValue
+            raw.itemId = info.itemID
+            raw.isBound = info.isBound
+        end
+    elseif GetContainerItemInfo then
+        local icon, count, locked, quality, readable, lootable, link2, isFiltered, noValue, itemID = GetContainerItemInfo(bagId, slot)
+        raw.iconFileID = icon
+        raw.stackCount = count
+        raw.isLocked = locked
+        raw.quality = quality
+        raw.isReadable = readable
+        raw.hasLoot = lootable
+        raw.hyperlink = link2 or link
+        raw.isFiltered = isFiltered
+        raw.hasNoValue = noValue
+        raw.itemId = itemID
+    end
+
+    if not raw.itemId then
+        raw.itemId = ExtractItemIdFromLink(link)
+    end
+
+    if GetItemInfo then
+        local name, _, quality, iLevel, reqLevel, itemType, itemSubType,
+              maxStack, equipLoc, _, sellPrice, classID, subClassID, bindType
+              = GetItemInfo(link)
+        raw.name = name
+        if quality and not raw.quality then raw.quality = quality end
+        raw.itemLevel = iLevel
+        raw.requiredLevel = reqLevel
+        raw.type = itemType
+        raw.subType = itemSubType
+        raw.maxStackCount = maxStack
+        raw.equipLoc = (equipLoc and equipLoc ~= "") and equipLoc or nil
+        raw.sellPrice = sellPrice
+        raw.classID = classID
+        raw.subClassID = subClassID
+        raw.bindType = bindType
+    end
+
+    return raw
+end
+
+local function EnsureLocalSnapshotContainer(charKey)
+    local charData = AuberdineExporterDB.characters[charKey]
+    if not charData then return nil end
+    if not charData.localSnapshot then
+        charData.localSnapshot = {
+            bags = {},
+            bank = { main = nil, bags = {} },
+            keyring = nil,
+            lastBagsUpdate = 0,
+            lastBankUpdate = 0,
+            lastUpdate = 0,
+        }
+    end
+    if not charData.localSnapshot.bank then
+        charData.localSnapshot.bank = { main = nil, bags = {} }
+    end
+    return charData.localSnapshot
+end
+
+local function ScanLocalSnapshotContainer(bagId)
+    local numSlots = GetBagNumSlots(bagId) or 0
+    local container = { numSlots = numSlots, slots = {} }
+    if numSlots <= 0 then return container end
+    for slot = 1, numSlots do
+        local raw = CaptureRawSlot(bagId, slot)
+        if raw then
+            container.slots[slot] = raw
+        end
+    end
+    return container
+end
+
+local function ScanLocalSnapshotBags(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local snap = EnsureLocalSnapshotContainer(charKey)
+    snap.bags = {}
+    local total = 0
+    for bagId = BAG_BACKPACK, BAG_LAST do
+        local container = ScanLocalSnapshotContainer(bagId)
+        snap.bags[bagId] = container
+        for _ in pairs(container.slots) do total = total + 1 end
+    end
+    if KEYRING_BAG and (GetBagNumSlots(KEYRING_BAG) or 0) > 0 then
+        snap.keyring = ScanLocalSnapshotContainer(KEYRING_BAG)
+        for _ in pairs(snap.keyring.slots) do total = total + 1 end
+    end
+    snap.lastBagsUpdate = time()
+    snap.lastUpdate = snap.lastBagsUpdate
+    return total
+end
+
+local function ScanLocalSnapshotBank(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local snap = EnsureLocalSnapshotContainer(charKey)
+    local bank = { main = nil, bags = {} }
+    bank.main = ScanLocalSnapshotContainer(BANK_MAIN)
+    local total = 0
+    for _ in pairs(bank.main.slots) do total = total + 1 end
+    for bagId = BANK_FIRST, BANK_LAST do
+        local container = ScanLocalSnapshotContainer(bagId)
+        if container.numSlots and container.numSlots > 0 then
+            bank.bags[bagId] = container
+            for _ in pairs(container.slots) do total = total + 1 end
+        end
+    end
+    snap.bank = bank
+    snap.lastBankUpdate = time()
+    snap.lastUpdate = snap.lastBankUpdate
+    return total
+end
+
 -- Throttle pour éviter les scans intempestifs (BAG_UPDATE etc.)
 local inventoryScanState = {
     pendingBags = false,
@@ -977,6 +1127,7 @@ local function RunBagsScan()
     local charKey = InitializeCharacterData()
     if not charKey then return end
     ScanBags(charKey)
+    ScanLocalSnapshotBags(charKey)
     RecomputeConsumables(charKey)
     inventoryScanState.lastBagsScan = time()
 end
@@ -997,6 +1148,7 @@ local function RunBankScan()
     local charKey = InitializeCharacterData()
     if not charKey then return end
     ScanBank(charKey)
+    ScanLocalSnapshotBank(charKey)
     RecomputeConsumables(charKey)
     inventoryScanState.lastBankScan = time()
 end
@@ -1026,9 +1178,11 @@ local function ScanFullInventory()
     if not charKey then return 0, 0, 0 end
     local equipCount = ScanEquipment(charKey)
     local bagCount = ScanBags(charKey)
+    ScanLocalSnapshotBags(charKey)
     local bankCount = 0
     if inventoryScanState.bankOpen then
         bankCount = ScanBank(charKey)
+        ScanLocalSnapshotBank(charKey)
     end
     local consumableCount = RecomputeConsumables(charKey)
     return equipCount, bagCount, bankCount, consumableCount
@@ -1040,6 +1194,13 @@ AuberdineExporter.ScanEquipment = function(self) return ScanEquipment(GetCurrent
 AuberdineExporter.ScanBags = function(self) return ScanBags(GetCurrentCharacterKey()) end
 AuberdineExporter.ScanBank = function(self) return ScanBank(GetCurrentCharacterKey()) end
 AuberdineExporter.RecomputeConsumables = function(self) return RecomputeConsumables(GetCurrentCharacterKey()) end
+AuberdineExporter.ScanLocalSnapshotBags = function(self) return ScanLocalSnapshotBags(GetCurrentCharacterKey()) end
+AuberdineExporter.ScanLocalSnapshotBank = function(self) return ScanLocalSnapshotBank(GetCurrentCharacterKey()) end
+function AuberdineExporter:GetLocalSnapshot(charKey)
+    charKey = charKey or GetCurrentCharacterKey()
+    local charData = AuberdineExporterDB and AuberdineExporterDB.characters and AuberdineExporterDB.characters[charKey]
+    return charData and charData.localSnapshot or nil
+end
 
 -- Implémentation MD5 simplifiée pour WoW Classic
 -- Utilise une approche compatible avec toutes les versions de WoW
@@ -2423,6 +2584,35 @@ local function HandleSlashCommand(msg)
         if (bankCount or 0) == 0 and not inventoryScanState.bankOpen then
             print("|cffff8000AuberdineExporter:|r Ouvrez la banque pour collecter son contenu.")
         end
+    elseif command == "localsnapshot" or command == "snapshot" or command == "snap" then
+        -- Snapshot brut local des sacs et de la banque (NON exporté).
+        -- Destiné à un futur client Electron qui lira la SavedVariable.
+        local charKey = InitializeCharacterData()
+        if not charKey then return end
+        local bagCount = ScanLocalSnapshotBags(charKey)
+        local bankCount = 0
+        if inventoryScanState.bankOpen then
+            bankCount = ScanLocalSnapshotBank(charKey)
+        end
+        local snap = AuberdineExporterDB.characters[charKey].localSnapshot
+        local lastBags = snap and snap.lastBagsUpdate or 0
+        local lastBank = snap and snap.lastBankUpdate or 0
+        print(string.format(
+            "|cff00ff00AuberdineExporter:|r Snapshot local mis à jour : %d objet(s) en sacs, %d en banque.",
+            bagCount, bankCount
+        ))
+        print(string.format(
+            "  • Dernier scan sacs   : %s",
+            lastBags > 0 and date("%Y-%m-%d %H:%M:%S", lastBags) or "jamais"
+        ))
+        print(string.format(
+            "  • Dernier scan banque : %s",
+            lastBank > 0 and date("%Y-%m-%d %H:%M:%S", lastBank) or "jamais"
+        ))
+        if not inventoryScanState.bankOpen then
+            print("|cffff8000Note:|r Ouvrez la banque pour rafraîchir son snapshot.")
+        end
+        print("|cffff8000Stockage local uniquement|r — non inclus dans les exports auberdine.eu.")
     elseif command == "consumables" or command == "consu" then
         local charKey = GetCurrentCharacterKey()
         RecomputeConsumables(charKey)
@@ -2650,6 +2840,7 @@ local function HandleSlashCommand(msg)
         print("  /auberdine scan - Scanner métiers + inventaire (équipement, sacs, banque)")
         print("  /auberdine inventory - Scanner uniquement l'inventaire (alias: /auberdine inv)")
         print("  /auberdine consumables - Afficher les consommables agrégés (alias: consu)")
+        print("  /auberdine localsnapshot - Forcer un snapshot local complet (sacs+banque, non exporté)")
         print("  /auberdine recipes - Afficher toutes les recettes avec IDs")
         print("  /auberdine stats - Afficher les statistiques dans le chat")
         print("")
