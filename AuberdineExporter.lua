@@ -320,7 +320,7 @@ end
 local function GetAddonVersion()
     local addonName = "AuberdineExporter"
     local version = GetAddOnMetadata(addonName, "Version")
-    return version or "1.3.4" -- Fallback au cas où la lecture échoue
+    return version or "1.4.1" -- Fallback au cas où la lecture échoue
 end
 
 -- Clé client publique pour auberdine.eu
@@ -634,6 +634,574 @@ function GetExportableCharacters()
     return exportableChars
 end
 
+-- =====================================================================
+-- ===== COLLECTE INVENTAIRE (équipement, sacs, banque) ET CONSOMMABLES
+-- =====================================================================
+
+-- Slots d'équipement scannés (1..19, hors slots cosmétiques inutiles)
+local EQUIPMENT_SLOTS = {
+    [1]  = "Head",     [2]  = "Neck",     [3]  = "Shoulder", [4]  = "Shirt",
+    [5]  = "Chest",    [6]  = "Waist",    [7]  = "Legs",     [8]  = "Feet",
+    [9]  = "Wrist",    [10] = "Hands",    [11] = "Finger1",  [12] = "Finger2",
+    [13] = "Trinket1", [14] = "Trinket2", [15] = "Back",     [16] = "MainHand",
+    [17] = "OffHand",  [18] = "Ranged",   [19] = "Tabard",
+}
+
+-- Constantes de bagId
+local BAG_BACKPACK = 0
+local BAG_FIRST    = 1
+local BAG_LAST     = 4
+local BANK_MAIN    = -1
+local BANK_FIRST   = 5
+local BANK_LAST    = 11
+local KEYRING_BAG  = -2
+
+-- Compatibilité API : utiliser C_Container si dispo, sinon fallback global
+local function GetBagNumSlots(bagId)
+    if C_Container and C_Container.GetContainerNumSlots then
+        return C_Container.GetContainerNumSlots(bagId) or 0
+    elseif GetContainerNumSlots then
+        return GetContainerNumSlots(bagId) or 0
+    end
+    return 0
+end
+
+local function GetBagItemLink(bagId, slot)
+    if C_Container and C_Container.GetContainerItemLink then
+        return C_Container.GetContainerItemLink(bagId, slot)
+    elseif GetContainerItemLink then
+        return GetContainerItemLink(bagId, slot)
+    end
+    return nil
+end
+
+local function GetBagItemInfo(bagId, slot)
+    -- Renvoie : count, itemId, hyperlink
+    if C_Container and C_Container.GetContainerItemInfo then
+        local info = C_Container.GetContainerItemInfo(bagId, slot)
+        if info then
+            return info.stackCount or 1, info.itemID, info.hyperlink
+        end
+        return nil, nil, nil
+    elseif GetContainerItemInfo then
+        -- API Classic legacy : icon, count, locked, quality, readable, lootable, link, isFiltered, noValue, itemID
+        local _, count, _, _, _, _, link, _, _, itemID = GetContainerItemInfo(bagId, slot)
+        return count or 1, itemID, link
+    end
+    return nil, nil, nil
+end
+
+-- Extraire l'itemId depuis un itemLink en fallback
+local function ExtractItemIdFromLink(itemLink)
+    if not itemLink then return nil end
+    local id = string.match(itemLink, "item:(%d+):")
+    return id and tonumber(id) or nil
+end
+
+-- Construire un enregistrement d'objet normalisé à partir d'un lien
+local function BuildItemRecord(itemLink, count, itemId)
+    if not itemLink and not itemId then return nil end
+
+    local name, link, quality, iLevel, _, itemType, itemSubType, _, equipLoc, _, _, classID, subClassID
+    if GetItemInfo then
+        name, link, quality, iLevel, _, itemType, itemSubType, _, equipLoc, _, _, classID, subClassID = GetItemInfo(itemLink or itemId)
+    end
+
+    local resolvedId = itemId or ExtractItemIdFromLink(itemLink or link)
+    if not resolvedId then return nil end
+
+    return {
+        id        = resolvedId,
+        name      = name,
+        link      = link or itemLink,
+        count     = count or 1,
+        quality   = quality,
+        iLevel    = iLevel,
+        type      = itemType,
+        subType   = itemSubType,
+        equipLoc  = equipLoc and equipLoc ~= "" and equipLoc or nil,
+        classID   = classID,
+        subClassID = subClassID,
+    }
+end
+
+-- Collecter le contenu d'un bag (renvoie la table { numSlots, slots = {[slot]=item} })
+local function ScanContainer(bagId)
+    local numSlots = GetBagNumSlots(bagId)
+    local container = { numSlots = numSlots, slots = {} }
+    if not numSlots or numSlots <= 0 then
+        return container
+    end
+    for slot = 1, numSlots do
+        local link = GetBagItemLink(bagId, slot)
+        if link then
+            local count, itemId = GetBagItemInfo(bagId, slot)
+            local record = BuildItemRecord(link, count, itemId)
+            if record then
+                container.slots[slot] = record
+            end
+        end
+    end
+    return container
+end
+
+local function EnsureInventoryContainer(charKey)
+    local charData = AuberdineExporterDB.characters[charKey]
+    if not charData then return nil end
+    if not charData.inventory then
+        charData.inventory = {
+            equipment = {},
+            bags = {},
+            bank = { main = nil, bags = {}, lastUpdate = 0 },
+            keyring = nil,
+            lastUpdate = 0,
+        }
+    end
+    if not charData.inventory.bank then
+        charData.inventory.bank = { main = nil, bags = {}, lastUpdate = 0 }
+    end
+    return charData.inventory
+end
+
+-- Scan de l'équipement porté
+local function ScanEquipment(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local inventory = EnsureInventoryContainer(charKey)
+    inventory.equipment = {}
+    local count = 0
+    for slotId, slotName in pairs(EQUIPMENT_SLOTS) do
+        local link = GetInventoryItemLink and GetInventoryItemLink("player", slotId)
+        if link then
+            local record = BuildItemRecord(link, 1, nil)
+            if record then
+                record.slot = slotId
+                record.slotName = slotName
+                inventory.equipment[slotId] = record
+                count = count + 1
+            end
+        end
+    end
+    inventory.lastUpdate = time()
+    return count
+end
+
+-- Scan de tous les sacs (backpack + 4 sacs)
+local function ScanBags(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local inventory = EnsureInventoryContainer(charKey)
+    inventory.bags = {}
+    local total = 0
+    for bagId = BAG_BACKPACK, BAG_LAST do
+        local container = ScanContainer(bagId)
+        inventory.bags[bagId] = container
+        for _ in pairs(container.slots) do total = total + 1 end
+    end
+    -- Keyring (Classic Era)
+    if KEYRING_BAG and GetBagNumSlots(KEYRING_BAG) > 0 then
+        inventory.keyring = ScanContainer(KEYRING_BAG)
+    end
+    inventory.lastUpdate = time()
+    return total
+end
+
+-- Scan de la banque (uniquement quand BANKFRAME est ouvert)
+local function ScanBank(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local inventory = EnsureInventoryContainer(charKey)
+    local bank = { main = nil, bags = {}, lastUpdate = time() }
+    bank.main = ScanContainer(BANK_MAIN)
+    local total = 0
+    for _ in pairs(bank.main.slots) do total = total + 1 end
+    for bagId = BANK_FIRST, BANK_LAST do
+        local container = ScanContainer(bagId)
+        if container.numSlots and container.numSlots > 0 then
+            bank.bags[bagId] = container
+            for _ in pairs(container.slots) do total = total + 1 end
+        end
+    end
+    inventory.bank = bank
+    inventory.lastUpdate = time()
+    return total
+end
+
+-- Détection des consommables : classID 0 (Consumable) ou catégorisation héritée
+local CONSUMABLE_CLASS_ID = 0
+
+-- Buckets utilisés par auberdine.eu pour la "chambre froide"
+-- Mapping basé sur subClassID Consumable (Classic Era):
+-- 0=Consumable générique, 1=Potion, 2=Élixir, 3=Flacon, 4=Parchemin,
+-- 5=Nourriture/Boisson, 6=Amélioration d'objet, 7=Bandage, 8=Autre
+local CONSUMABLE_SUBCLASS_BUCKETS = {
+    [0] = "other",
+    [1] = "potion",
+    [2] = "elixir",
+    [3] = "flask",
+    [4] = "scroll",
+    [5] = "food",
+    [6] = "enhancement",  -- pierres à aiguiser, huiles, etc.
+    [7] = "bandage",
+    [8] = "other",
+}
+
+-- Détection complémentaire par mots-clés (juju, huile, pierre, etc.)
+-- pour les serveurs Classic où classID/subClassID ne sont pas toujours fiables.
+local CONSUMABLE_NAME_HINTS = {
+    { pattern = "[Jj]uju",                          bucket = "juju" },
+    { pattern = "[Hh]uile",                         bucket = "enhancement" },
+    { pattern = "[Oo]il of",                        bucket = "enhancement" },
+    { pattern = "[Ss]harpening [Ss]tone",           bucket = "enhancement" },
+    { pattern = "[Pp]ierre %a* [aà]iguiser",        bucket = "enhancement" },
+    { pattern = "[Ww]eightstone",                   bucket = "enhancement" },
+    { pattern = "[Pp]ierre de poids",               bucket = "enhancement" },
+}
+
+local function IsConsumableRecord(record)
+    if not record then return false end
+    if record.classID == CONSUMABLE_CLASS_ID then return true end
+    -- Fallback texte si classID indisponible (cache GetItemInfo non chargé par exemple)
+    if record.type and (record.type == "Consumable" or record.type == "Consommable") then
+        return true
+    end
+    return false
+end
+
+local function GetConsumableBucket(record)
+    if not record then return "other" end
+    if record.name then
+        for _, hint in ipairs(CONSUMABLE_NAME_HINTS) do
+            if string.find(record.name, hint.pattern) then
+                return hint.bucket
+            end
+        end
+    end
+    if record.subClassID and CONSUMABLE_SUBCLASS_BUCKETS[record.subClassID] then
+        return CONSUMABLE_SUBCLASS_BUCKETS[record.subClassID]
+    end
+    return "other"
+end
+
+-- Recalcule l'agrégat des consommables d'un personnage à partir de
+-- l'équipement (ignoré), des sacs et de la banque.
+local function RecomputeConsumables(charKey)
+    local charData = AuberdineExporterDB.characters[charKey]
+    if not charData or not charData.inventory then return 0 end
+
+    local consumables = {}
+
+    local function addRecord(record, location)
+        if not IsConsumableRecord(record) then return end
+        local id = record.id
+        if not id then return end
+        local entry = consumables[id]
+        if not entry then
+            entry = {
+                id = id,
+                name = record.name,
+                link = record.link,
+                quality = record.quality,
+                classID = record.classID,
+                subClassID = record.subClassID,
+                bucket = GetConsumableBucket(record),
+                count = 0,
+                locations = { bags = 0, bank = 0 },
+            }
+            consumables[id] = entry
+        end
+        entry.count = entry.count + (record.count or 1)
+        entry.locations[location] = (entry.locations[location] or 0) + (record.count or 1)
+        -- Compléter le nom si on l'a obtenu plus tard
+        if not entry.name and record.name then entry.name = record.name end
+        if not entry.link and record.link then entry.link = record.link end
+    end
+
+    -- Sacs
+    if charData.inventory.bags then
+        for _, container in pairs(charData.inventory.bags) do
+            if container.slots then
+                for _, record in pairs(container.slots) do
+                    addRecord(record, "bags")
+                end
+            end
+        end
+    end
+    if charData.inventory.keyring and charData.inventory.keyring.slots then
+        for _, record in pairs(charData.inventory.keyring.slots) do
+            addRecord(record, "bags")
+        end
+    end
+
+    -- Banque
+    if charData.inventory.bank then
+        if charData.inventory.bank.main and charData.inventory.bank.main.slots then
+            for _, record in pairs(charData.inventory.bank.main.slots) do
+                addRecord(record, "bank")
+            end
+        end
+        if charData.inventory.bank.bags then
+            for _, container in pairs(charData.inventory.bank.bags) do
+                if container.slots then
+                    for _, record in pairs(container.slots) do
+                        addRecord(record, "bank")
+                    end
+                end
+            end
+        end
+    end
+
+    charData.consumables = {
+        items = consumables,
+        lastUpdate = time(),
+    }
+
+    local count = 0
+    for _ in pairs(consumables) do count = count + 1 end
+    return count
+end
+
+-- =====================================================================
+-- ===== SNAPSHOT LOCAL BRUT (sacs + banque)
+-- =====================================================================
+-- Ces données sont stockées UNIQUEMENT dans la SavedVariable locale,
+-- destinées à être consommées par un client Electron local.
+-- Elles ne sont PAS incluses dans les exports JSON envoyés à auberdine.eu.
+-- =====================================================================
+
+local function ExtractItemString(itemLink)
+    if not itemLink then return nil end
+    return string.match(itemLink, "item[%-?%d:]+")
+end
+
+-- Capture l'intégralité des champs disponibles pour un slot donné
+local function CaptureRawSlot(bagId, slot)
+    local link = GetBagItemLink(bagId, slot)
+    if not link then return nil end
+
+    local raw = {
+        bag = bagId,
+        slot = slot,
+        link = link,
+        itemString = ExtractItemString(link),
+    }
+
+    if C_Container and C_Container.GetContainerItemInfo then
+        local info = C_Container.GetContainerItemInfo(bagId, slot)
+        if info then
+            raw.iconFileID = info.iconFileID
+            raw.stackCount = info.stackCount
+            raw.isLocked = info.isLocked
+            raw.quality = info.quality
+            raw.isReadable = info.isReadable
+            raw.hasLoot = info.hasLoot
+            raw.hyperlink = info.hyperlink
+            raw.isFiltered = info.isFiltered
+            raw.hasNoValue = info.hasNoValue
+            raw.itemId = info.itemID
+            raw.isBound = info.isBound
+        end
+    elseif GetContainerItemInfo then
+        local icon, count, locked, quality, readable, lootable, link2, isFiltered, noValue, itemID = GetContainerItemInfo(bagId, slot)
+        raw.iconFileID = icon
+        raw.stackCount = count
+        raw.isLocked = locked
+        raw.quality = quality
+        raw.isReadable = readable
+        raw.hasLoot = lootable
+        raw.hyperlink = link2 or link
+        raw.isFiltered = isFiltered
+        raw.hasNoValue = noValue
+        raw.itemId = itemID
+    end
+
+    if not raw.itemId then
+        raw.itemId = ExtractItemIdFromLink(link)
+    end
+
+    if GetItemInfo then
+        local name, _, quality, iLevel, reqLevel, itemType, itemSubType,
+              maxStack, equipLoc, _, sellPrice, classID, subClassID, bindType
+              = GetItemInfo(link)
+        raw.name = name
+        if quality and not raw.quality then raw.quality = quality end
+        raw.itemLevel = iLevel
+        raw.requiredLevel = reqLevel
+        raw.type = itemType
+        raw.subType = itemSubType
+        raw.maxStackCount = maxStack
+        raw.equipLoc = (equipLoc and equipLoc ~= "") and equipLoc or nil
+        raw.sellPrice = sellPrice
+        raw.classID = classID
+        raw.subClassID = subClassID
+        raw.bindType = bindType
+    end
+
+    return raw
+end
+
+local function EnsureLocalSnapshotContainer(charKey)
+    local charData = AuberdineExporterDB.characters[charKey]
+    if not charData then return nil end
+    if not charData.localSnapshot then
+        charData.localSnapshot = {
+            bags = {},
+            bank = { main = nil, bags = {} },
+            keyring = nil,
+            lastBagsUpdate = 0,
+            lastBankUpdate = 0,
+            lastUpdate = 0,
+        }
+    end
+    if not charData.localSnapshot.bank then
+        charData.localSnapshot.bank = { main = nil, bags = {} }
+    end
+    return charData.localSnapshot
+end
+
+local function ScanLocalSnapshotContainer(bagId)
+    local numSlots = GetBagNumSlots(bagId) or 0
+    local container = { numSlots = numSlots, slots = {} }
+    if numSlots <= 0 then return container end
+    for slot = 1, numSlots do
+        local raw = CaptureRawSlot(bagId, slot)
+        if raw then
+            container.slots[slot] = raw
+        end
+    end
+    return container
+end
+
+local function ScanLocalSnapshotBags(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local snap = EnsureLocalSnapshotContainer(charKey)
+    snap.bags = {}
+    local total = 0
+    for bagId = BAG_BACKPACK, BAG_LAST do
+        local container = ScanLocalSnapshotContainer(bagId)
+        snap.bags[bagId] = container
+        for _ in pairs(container.slots) do total = total + 1 end
+    end
+    if KEYRING_BAG and (GetBagNumSlots(KEYRING_BAG) or 0) > 0 then
+        snap.keyring = ScanLocalSnapshotContainer(KEYRING_BAG)
+        for _ in pairs(snap.keyring.slots) do total = total + 1 end
+    end
+    snap.lastBagsUpdate = time()
+    snap.lastUpdate = snap.lastBagsUpdate
+    return total
+end
+
+local function ScanLocalSnapshotBank(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local snap = EnsureLocalSnapshotContainer(charKey)
+    local bank = { main = nil, bags = {} }
+    bank.main = ScanLocalSnapshotContainer(BANK_MAIN)
+    local total = 0
+    for _ in pairs(bank.main.slots) do total = total + 1 end
+    for bagId = BANK_FIRST, BANK_LAST do
+        local container = ScanLocalSnapshotContainer(bagId)
+        if container.numSlots and container.numSlots > 0 then
+            bank.bags[bagId] = container
+            for _ in pairs(container.slots) do total = total + 1 end
+        end
+    end
+    snap.bank = bank
+    snap.lastBankUpdate = time()
+    snap.lastUpdate = snap.lastBankUpdate
+    return total
+end
+
+-- Throttle pour éviter les scans intempestifs (BAG_UPDATE etc.)
+local inventoryScanState = {
+    pendingBags = false,
+    pendingEquipment = false,
+    pendingBank = false,
+    bankOpen = false,
+    lastBagsScan = 0,
+    lastEquipmentScan = 0,
+    lastBankScan = 0,
+}
+
+local INVENTORY_SCAN_THROTTLE = 2 -- secondes mini entre deux scans automatiques
+
+local function RunBagsScan()
+    inventoryScanState.pendingBags = false
+    if not IsValidRealm() then return end
+    local charKey = InitializeCharacterData()
+    if not charKey then return end
+    ScanBags(charKey)
+    ScanLocalSnapshotBags(charKey)
+    RecomputeConsumables(charKey)
+    inventoryScanState.lastBagsScan = time()
+end
+
+local function RunEquipmentScan()
+    inventoryScanState.pendingEquipment = false
+    if not IsValidRealm() then return end
+    local charKey = InitializeCharacterData()
+    if not charKey then return end
+    ScanEquipment(charKey)
+    inventoryScanState.lastEquipmentScan = time()
+end
+
+local function RunBankScan()
+    inventoryScanState.pendingBank = false
+    if not IsValidRealm() then return end
+    if not inventoryScanState.bankOpen then return end
+    local charKey = InitializeCharacterData()
+    if not charKey then return end
+    ScanBank(charKey)
+    ScanLocalSnapshotBank(charKey)
+    RecomputeConsumables(charKey)
+    inventoryScanState.lastBankScan = time()
+end
+
+local function ScheduleBagsScan()
+    if inventoryScanState.pendingBags then return end
+    inventoryScanState.pendingBags = true
+    C_Timer.After(INVENTORY_SCAN_THROTTLE, RunBagsScan)
+end
+
+local function ScheduleEquipmentScan()
+    if inventoryScanState.pendingEquipment then return end
+    inventoryScanState.pendingEquipment = true
+    C_Timer.After(1, RunEquipmentScan)
+end
+
+local function ScheduleBankScan()
+    if inventoryScanState.pendingBank then return end
+    inventoryScanState.pendingBank = true
+    C_Timer.After(1, RunBankScan)
+end
+
+-- Scan complet inventaire (utilisé par /auberdine scan et au login)
+local function ScanFullInventory()
+    if not IsValidRealm() then return 0, 0, 0 end
+    local charKey = InitializeCharacterData()
+    if not charKey then return 0, 0, 0 end
+    local equipCount = ScanEquipment(charKey)
+    local bagCount = ScanBags(charKey)
+    ScanLocalSnapshotBags(charKey)
+    local bankCount = 0
+    if inventoryScanState.bankOpen then
+        bankCount = ScanBank(charKey)
+        ScanLocalSnapshotBank(charKey)
+    end
+    local consumableCount = RecomputeConsumables(charKey)
+    return equipCount, bagCount, bankCount, consumableCount
+end
+
+-- Exposer les fonctions au reste du fichier / interface
+AuberdineExporter.ScanFullInventory = ScanFullInventory
+AuberdineExporter.ScanEquipment = function(self) return ScanEquipment(GetCurrentCharacterKey()) end
+AuberdineExporter.ScanBags = function(self) return ScanBags(GetCurrentCharacterKey()) end
+AuberdineExporter.ScanBank = function(self) return ScanBank(GetCurrentCharacterKey()) end
+AuberdineExporter.RecomputeConsumables = function(self) return RecomputeConsumables(GetCurrentCharacterKey()) end
+AuberdineExporter.ScanLocalSnapshotBags = function(self) return ScanLocalSnapshotBags(GetCurrentCharacterKey()) end
+AuberdineExporter.ScanLocalSnapshotBank = function(self) return ScanLocalSnapshotBank(GetCurrentCharacterKey()) end
+function AuberdineExporter:GetLocalSnapshot(charKey)
+    charKey = charKey or GetCurrentCharacterKey()
+    local charData = AuberdineExporterDB and AuberdineExporterDB.characters and AuberdineExporterDB.characters[charKey]
+    return charData and charData.localSnapshot or nil
+end
+
 -- Implémentation MD5 simplifiée pour WoW Classic
 -- Utilise une approche compatible avec toutes les versions de WoW
 local function md5_sumhexa(s)
@@ -703,6 +1271,10 @@ function ExportToJSON()
             totalCharacters = 0,
             totalProfessions = 0,
             totalRecipes = 0,
+            totalEquipment = 0,
+            totalBagItems = 0,
+            totalBankItems = 0,
+            totalConsumables = 0,
             exportedBy = UnitName("player") .. "-" .. GetRealmName(),
             exportedAt = GetZoneText and GetZoneText() or "unknown",
             -- NOUVEAU v1.3.2: Statistiques de configuration
@@ -776,17 +1348,27 @@ function ExportToJSON()
                     totalProfessions = 0,
                     totalRecipes = 0,
                     totalSkills = 0,
-                    totalReputations = 0
+                    totalReputations = 0,
+                    totalEquipment = 0,
+                    totalBagItems = 0,
+                    totalBankItems = 0,
+                    totalConsumables = 0,
                 },
-                
+
                 -- Professions de ce personnage
                 professions = {},
-                
-                -- Skills de ce personnage  
+
+                -- Skills de ce personnage
                 skills = charData.skills or {},
-                
+
                 -- Réputations de ce personnage
-                reputations = charData.reputations or {}
+                reputations = charData.reputations or {},
+
+                -- Inventaire (dressroom) : équipement, sacs et banque
+                inventory = charData.inventory or { equipment = {}, bags = {}, bank = { main = nil, bags = {} } },
+
+                -- Consommables agrégés (chambre froide)
+                consumables = charData.consumables or { items = {}, lastUpdate = 0 }
             }
             
             -- Ajouter localisation si c'est le personnage connecté
@@ -833,11 +1415,50 @@ function ExportToJSON()
             end
             
             -- Compter les skills et réputations
-            for _ in pairs(characterExport.skills) do 
-                characterExport.stats.totalSkills = characterExport.stats.totalSkills + 1 
+            for _ in pairs(characterExport.skills) do
+                characterExport.stats.totalSkills = characterExport.stats.totalSkills + 1
             end
-            for _ in pairs(characterExport.reputations) do 
-                characterExport.stats.totalReputations = characterExport.stats.totalReputations + 1 
+            for _ in pairs(characterExport.reputations) do
+                characterExport.stats.totalReputations = characterExport.stats.totalReputations + 1
+            end
+
+            -- Compter les éléments d'inventaire
+            if characterExport.inventory then
+                if characterExport.inventory.equipment then
+                    for _ in pairs(characterExport.inventory.equipment) do
+                        characterExport.stats.totalEquipment = characterExport.stats.totalEquipment + 1
+                    end
+                end
+                if characterExport.inventory.bags then
+                    for _, container in pairs(characterExport.inventory.bags) do
+                        if container.slots then
+                            for _ in pairs(container.slots) do
+                                characterExport.stats.totalBagItems = characterExport.stats.totalBagItems + 1
+                            end
+                        end
+                    end
+                end
+                if characterExport.inventory.bank then
+                    if characterExport.inventory.bank.main and characterExport.inventory.bank.main.slots then
+                        for _ in pairs(characterExport.inventory.bank.main.slots) do
+                            characterExport.stats.totalBankItems = characterExport.stats.totalBankItems + 1
+                        end
+                    end
+                    if characterExport.inventory.bank.bags then
+                        for _, container in pairs(characterExport.inventory.bank.bags) do
+                            if container.slots then
+                                for _ in pairs(container.slots) do
+                                    characterExport.stats.totalBankItems = characterExport.stats.totalBankItems + 1
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            if characterExport.consumables and characterExport.consumables.items then
+                for _ in pairs(characterExport.consumables.items) do
+                    characterExport.stats.totalConsumables = characterExport.stats.totalConsumables + 1
+                end
             end
             
             -- Ajouter le personnage à l'export
@@ -847,6 +1468,10 @@ function ExportToJSON()
             exportData.summary.totalCharacters = exportData.summary.totalCharacters + 1
             exportData.summary.totalProfessions = exportData.summary.totalProfessions + characterExport.stats.totalProfessions
             exportData.summary.totalRecipes = exportData.summary.totalRecipes + characterExport.stats.totalRecipes
+            exportData.summary.totalEquipment = exportData.summary.totalEquipment + characterExport.stats.totalEquipment
+            exportData.summary.totalBagItems = exportData.summary.totalBagItems + characterExport.stats.totalBagItems
+            exportData.summary.totalBankItems = exportData.summary.totalBankItems + characterExport.stats.totalBankItems
+            exportData.summary.totalConsumables = exportData.summary.totalConsumables + characterExport.stats.totalConsumables
             
             -- NOUVEAU v1.3.2: Collecter les statistiques de configuration
             local charType = charSettings.characterType
@@ -1082,7 +1707,9 @@ function ExportToSimpleJSON()
         character = character,
         recipes = recipes,
         skills = freshSkills,
-        reputations = freshReputations
+        reputations = freshReputations,
+        inventory = charData.inventory or { equipment = {}, bags = {}, bank = { main = nil, bags = {} } },
+        consumables = charData.consumables or { items = {}, lastUpdate = 0 }
     }
 
     -- Génération du JSON (manuel, à plat)
@@ -1338,8 +1965,35 @@ local function CreateMainFrame()
                         end
                     end
                 end
-                text = text .. string.format("• %s (%s): %d métiers, %d recettes\n", 
-                    charData.name, charData.class, charProfessions, charRecipes)
+                local equipped, bagItems, bankItems, consumables = 0, 0, 0, 0
+                if charData.inventory then
+                    if charData.inventory.equipment then
+                        for _ in pairs(charData.inventory.equipment) do equipped = equipped + 1 end
+                    end
+                    if charData.inventory.bags then
+                        for _, c in pairs(charData.inventory.bags) do
+                            if c.slots then for _ in pairs(c.slots) do bagItems = bagItems + 1 end end
+                        end
+                    end
+                    if charData.inventory.bank then
+                        if charData.inventory.bank.main and charData.inventory.bank.main.slots then
+                            for _ in pairs(charData.inventory.bank.main.slots) do bankItems = bankItems + 1 end
+                        end
+                        if charData.inventory.bank.bags then
+                            for _, c in pairs(charData.inventory.bank.bags) do
+                                if c.slots then for _ in pairs(c.slots) do bankItems = bankItems + 1 end end
+                            end
+                        end
+                    end
+                end
+                if charData.consumables and charData.consumables.items then
+                    for _ in pairs(charData.consumables.items) do consumables = consumables + 1 end
+                end
+                text = text .. string.format(
+                    "• %s (%s): %d métiers, %d recettes | %d équipés, %d sac, %d banque, %d consommables\n",
+                    charData.name, charData.class, charProfessions, charRecipes,
+                    equipped, bagItems, bankItems, consumables
+                )
             end
             
             text = text .. "\nDétail par métier (tous personnages):\n"
@@ -1647,6 +2301,14 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("TRADE_SKILL_SHOW")
 frame:RegisterEvent("CRAFT_SHOW")
+-- Inventaire & consommables
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("BAG_UPDATE_DELAYED")
+frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+frame:RegisterEvent("BANKFRAME_OPENED")
+frame:RegisterEvent("BANKFRAME_CLOSED")
+frame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
+frame:RegisterEvent("PLAYERBANKBAGSLOTS_CHANGED")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -1777,6 +2439,32 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if IsValidRealm() then
             OnCraftShow()
         end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if IsValidRealm() then
+            -- Léger délai pour laisser le cache GetItemInfo se peupler
+            C_Timer.After(3, function()
+                ScanFullInventory()
+            end)
+        end
+    elseif event == "BAG_UPDATE_DELAYED" then
+        if IsValidRealm() then
+            ScheduleBagsScan()
+        end
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        if IsValidRealm() then
+            ScheduleEquipmentScan()
+        end
+    elseif event == "BANKFRAME_OPENED" then
+        if IsValidRealm() then
+            inventoryScanState.bankOpen = true
+            ScheduleBankScan()
+        end
+    elseif event == "BANKFRAME_CLOSED" then
+        inventoryScanState.bankOpen = false
+    elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYERBANKBAGSLOTS_CHANGED" then
+        if IsValidRealm() and inventoryScanState.bankOpen then
+            ScheduleBankScan()
+        end
     end
 end)
 
@@ -1876,6 +2564,73 @@ local function HandleSlashCommand(msg)
             print("|cff00ff00AuberdineExporter:|r Scan terminé ! " .. count .. " métiers trouvés.")
             if mainFrame and mainFrame:IsShown() then
                 mainFrame:UpdateContent()
+            end
+        end
+        -- Scan complet de l'inventaire en parallèle
+        local equipCount, bagCount, bankCount, consumableCount = ScanFullInventory()
+        print(string.format(
+            "|cff00ff00AuberdineExporter:|r Inventaire scanné : %d équipement, %d objets en sacs, %d en banque, %d consommables uniques.",
+            equipCount or 0, bagCount or 0, bankCount or 0, consumableCount or 0
+        ))
+        if (bankCount or 0) == 0 and not inventoryScanState.bankOpen then
+            print("|cffff8000AuberdineExporter:|r Ouvrez la banque pour collecter son contenu.")
+        end
+    elseif command == "inventory" or command == "inv" then
+        local equipCount, bagCount, bankCount, consumableCount = ScanFullInventory()
+        print(string.format(
+            "|cff00ff00AuberdineExporter:|r Inventaire scanné : %d équipement, %d objets en sacs, %d en banque, %d consommables uniques.",
+            equipCount or 0, bagCount or 0, bankCount or 0, consumableCount or 0
+        ))
+        if (bankCount or 0) == 0 and not inventoryScanState.bankOpen then
+            print("|cffff8000AuberdineExporter:|r Ouvrez la banque pour collecter son contenu.")
+        end
+    elseif command == "localsnapshot" or command == "snapshot" or command == "snap" then
+        -- Snapshot brut local des sacs et de la banque (NON exporté).
+        -- Destiné à un futur client Electron qui lira la SavedVariable.
+        local charKey = InitializeCharacterData()
+        if not charKey then return end
+        local bagCount = ScanLocalSnapshotBags(charKey)
+        local bankCount = 0
+        if inventoryScanState.bankOpen then
+            bankCount = ScanLocalSnapshotBank(charKey)
+        end
+        local snap = AuberdineExporterDB.characters[charKey].localSnapshot
+        local lastBags = snap and snap.lastBagsUpdate or 0
+        local lastBank = snap and snap.lastBankUpdate or 0
+        print(string.format(
+            "|cff00ff00AuberdineExporter:|r Snapshot local mis à jour : %d objet(s) en sacs, %d en banque.",
+            bagCount, bankCount
+        ))
+        print(string.format(
+            "  • Dernier scan sacs   : %s",
+            lastBags > 0 and date("%Y-%m-%d %H:%M:%S", lastBags) or "jamais"
+        ))
+        print(string.format(
+            "  • Dernier scan banque : %s",
+            lastBank > 0 and date("%Y-%m-%d %H:%M:%S", lastBank) or "jamais"
+        ))
+        if not inventoryScanState.bankOpen then
+            print("|cffff8000Note:|r Ouvrez la banque pour rafraîchir son snapshot.")
+        end
+        print("|cffff8000Stockage local uniquement|r — non inclus dans les exports auberdine.eu.")
+    elseif command == "consumables" or command == "consu" then
+        local charKey = GetCurrentCharacterKey()
+        RecomputeConsumables(charKey)
+        local charData = AuberdineExporterDB.characters[charKey]
+        local items = charData and charData.consumables and charData.consumables.items or {}
+        local buckets = {}
+        local total = 0
+        for _, entry in pairs(items) do
+            local b = entry.bucket or "other"
+            buckets[b] = (buckets[b] or 0) + (entry.count or 0)
+            total = total + (entry.count or 0)
+        end
+        print("|cff00ff00=== Consommables (" .. total .. " unités) ===|r")
+        if next(buckets) == nil then
+            print("|cffff8000Aucun consommable détecté.|r Ouvrez vos sacs / la banque puis relancez la commande.")
+        else
+            for bucket, count in pairs(buckets) do
+                print(string.format("  %s: %d", bucket, count))
             end
         end
     elseif command == "recipes" then
@@ -2082,7 +2837,10 @@ local function HandleSlashCommand(msg)
         print("|cffff8000=== COMMANDES PRINCIPALES ===|r")
         print("  /auberdine - Ouvrir l'interface principale")
         print("  /auberdine ui - Ouvrir l'interface principale")
-        print("  /auberdine scan - Scanner tous vos métiers (inclut récolte)")
+        print("  /auberdine scan - Scanner métiers + inventaire (équipement, sacs, banque)")
+        print("  /auberdine inventory - Scanner uniquement l'inventaire (alias: /auberdine inv)")
+        print("  /auberdine consumables - Afficher les consommables agrégés (alias: consu)")
+        print("  /auberdine localsnapshot - Forcer un snapshot local complet (sacs+banque, non exporté)")
         print("  /auberdine recipes - Afficher toutes les recettes avec IDs")
         print("  /auberdine stats - Afficher les statistiques dans le chat")
         print("")

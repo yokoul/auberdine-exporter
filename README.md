@@ -29,6 +29,11 @@ Format Base64 avec signature cryptographique multi-passes
 ### 📊 **Données complètes**
 Recettes, métiers, skills, réputations, niveaux
 
+### 🎒 **Inventaire & consommables (v1.4.0)**
+Équipement porté, sacs, banque et agrégat des consommables (potions, élixirs,
+flacons, parchemins, nourriture, huiles, juju, …) pour les vues *Dressroom* et
+*Chambre froide* sur auberdine.eu
+
 ### 👥 **Gestion avancée (v1.3.2)**
 Organisation des personnages par type et groupes de compte
 
@@ -90,6 +95,11 @@ git clone https://github.com/yokoul/auberdine-exporter.git AuberdineExporter
 /auberdine clear        # Nettoie les données (garde le personnage actuel)
 /auberdine size         # Affiche la taille des données stockées
 /auberdine reset        # Remet à zéro toutes les données
+
+# Inventaire & consommables (v1.4.0)
+/auberdine scan         # Scan métiers + inventaire (équipement, sacs, banque)
+/auberdine inventory    # Scan ciblé de l'inventaire (alias: /auberdine inv)
+/auberdine consumables  # Résumé des consommables agrégés (alias: consu)
 
 # Gestion des personnages (v1.3.2)
 /auberdine characters   # Liste tous les personnages avec leur configuration
@@ -249,7 +259,16 @@ node test-base64-system.js export.json    # 📋 Analyser un export spécifique
 
 ## 🔄 Historique des versions
 
-### 🚀 Version actuelle : **1.3.4** (Validation serveur Auberdine)
+### 🚀 Version actuelle : **1.4.0** (Dressroom & Chambre froide)
+- ✅ Collecte automatique de l'équipement porté (slots 1..19)
+- ✅ Collecte du contenu des sacs (sac à dos + 4 sacs) et du trousseau
+- ✅ Collecte du contenu de la banque et des sacs de banque à l'ouverture
+- ✅ Agrégation des consommables (potions, élixirs, flacons, parchemins, nourriture,
+  huiles, pierres à aiguiser, juju, bandages, …) avec ventilation sacs / banque
+- ✅ Données injectées dans les exports JSON pour alimenter les vues *Dressroom*
+  et *Chambre froide* sur auberdine.eu
+
+### 📋 **1.3.4** (Validation serveur Auberdine)
 - ✅ Validation du serveur : l'addon ne fonctionne que sur Auberdine
 - ✅ Messages d'erreur informatifs sur autres serveurs
 - ✅ Sécurisation de la collecte de données
@@ -265,11 +284,11 @@ node test-base64-system.js export.json    # 📋 Analyser un export spécifique
 ### 📈 Roadmap
 | Version | Statut | Fonctionnalités |
 |---------|--------|-----------------|
-| **1.3.4** | ✅ **Actuelle** | Validation serveur Auberdine |
+| **1.4.0** | ✅ **Actuelle** | Dressroom & Chambre froide (équipement, sacs, banque, consommables) |
+| **1.3.4** | ✅ Stable | Validation serveur Auberdine |
 | **1.3.3b** | ✅ Stable | Interface française, UX améliorée |
 | **1.3.0** | ✅ Stable | Format Base64 sécurisé |
 | **1.2.x** | 🗃️ Legacy | Format JSON (déprécié) |
-| **1.4.0** | 🚧 Prévue | Synchronisation cloud, backup auto |
 
 ## 🤝 Contribution
 
@@ -343,6 +362,6 @@ Ce projet est sous **licence MIT**. Voir [LICENSE](./LICENSE) pour plus de déta
 
 <img src="UI/Icons/ab128.png" width="32" height="32" alt="Auberdine Exporter" />
 
-**Version 1.3.1** • **WoW Classic Era** • **2025**
+**Version 1.4.0** • **WoW Classic Era** • **2026**
 
 </div>
