@@ -1035,16 +1035,87 @@ local CONSUMABLE_SUBCLASS_BUCKETS = {
     [8] = "other",
 }
 
--- Détection complémentaire par mots-clés (juju, huile, pierre, etc.)
--- pour les serveurs Classic où classID/subClassID ne sont pas toujours fiables.
+-- Détection complémentaire par mots-clés (FR+EN) pour les serveurs Classic
+-- où classID/subClassID ne sont pas toujours fiables : un cache GetItemInfo
+-- partiellement chargé renvoie souvent subClassID=0 alors que l'item devrait
+-- être catégorisé. Ordre = priorité (premier match gagne) : on place les
+-- catégories les plus spécifiques avant les patterns plus larges.
 local CONSUMABLE_NAME_HINTS = {
+    -- Buckets signature (très spécifiques, prioritaires)
     { pattern = "[Jj]uju",                          bucket = "juju" },
+
+    -- Améliorations d'objet (huiles, pierres à aiguiser, pierres de poids)
     { pattern = "[Hh]uile",                         bucket = "enhancement" },
     { pattern = "[Oo]il of",                        bucket = "enhancement" },
     { pattern = "[Ss]harpening [Ss]tone",           bucket = "enhancement" },
     { pattern = "[Pp]ierre %a* [aà]iguiser",        bucket = "enhancement" },
     { pattern = "[Ww]eightstone",                   bucket = "enhancement" },
     { pattern = "[Pp]ierre de poids",               bucket = "enhancement" },
+
+    -- Bandages
+    { pattern = "[Bb]andage",                       bucket = "bandage" },
+
+    -- Flacons (avant potions/élixirs)
+    { pattern = "[Ff]lacon",                        bucket = "flask" },
+    { pattern = "[Ff]lask",                         bucket = "flask" },
+
+    -- Élixirs (avant potions)
+    { pattern = "[Éé]lixir",                        bucket = "elixir" },
+    { pattern = "[Ee]lixir",                        bucket = "elixir" },
+
+    -- Potions et remèdes assimilés
+    { pattern = "[Pp]otion",                        bucket = "potion" },
+    { pattern = "[Rr]emède",                        bucket = "potion" },
+
+    -- Parchemins
+    { pattern = "[Pp]archemin",                     bucket = "scroll" },
+    { pattern = "[Ss]croll of",                     bucket = "scroll" },
+
+    -- Nourriture & boisson (FR Classic, patterns conservateurs pour limiter
+    -- les faux positifs)
+    { pattern = "[Tt]ourte",                        bucket = "food" },
+    { pattern = "[Pp]ain de",                       bucket = "food" },
+    { pattern = "[Ff]romage",                       bucket = "food" },
+    { pattern = "[Vv]iande",                        bucket = "food" },
+    { pattern = "[Pp]oisson",                       bucket = "food" },
+    { pattern = "[Ss]oupe",                         bucket = "food" },
+    { pattern = "[Rr]ago[uû]t",                     bucket = "food" },
+    { pattern = "[Oo]melette",                      bucket = "food" },
+    { pattern = "[Oo]eufs",                         bucket = "food" },
+    { pattern = "[Ss]andwich",                      bucket = "food" },
+    { pattern = "[Bb]oisson",                       bucket = "food" },
+    { pattern = "[Bb]ière",                         bucket = "food" },
+    { pattern = "[Vv]in %a",                        bucket = "food" },  -- "Vin rouge" mais pas "Vinaigre"
+    { pattern = "[Tt]hé ",                          bucket = "food" },
+    { pattern = "[Ee]au %a",                        bucket = "food" },  -- "Eau fraîche", "Eau bénite"
+    -- Items spécifiquement pêchés / cuisinés courants en Classic Era FR
+    { pattern = "[Tt]hon",                          bucket = "food" },
+    { pattern = "[Tt]ruite",                        bucket = "food" },
+    { pattern = "[Ss]aumon",                        bucket = "food" },
+    -- Boissons FR
+    { pattern = "[Hh]ydromiel",                     bucket = "food" },
+    { pattern = "[Jj]us de",                        bucket = "food" },
+    { pattern = "[Nn]ectar",                        bucket = "food" },
+    -- Sucreries / fruits / divers cuisine FR
+    { pattern = "[Cc]hocolat",                      bucket = "food" },
+    { pattern = "[Bb]onbon",                        bucket = "food" },
+    { pattern = "[Tt]ruffe",                        bucket = "food" },
+    { pattern = "[Pp]omme",                         bucket = "food" },
+    -- Équivalents EN
+    { pattern = "[Bb]read",                         bucket = "food" },
+    { pattern = "[Cc]heese",                        bucket = "food" },
+    { pattern = "[Mm]eat",                          bucket = "food" },
+    { pattern = "[Ff]ish",                          bucket = "food" },
+    { pattern = "[Ss]oup",                          bucket = "food" },
+    { pattern = "[Ss]tew",                          bucket = "food" },
+    { pattern = "[Bb]eer",                          bucket = "food" },
+    { pattern = "[Ww]ine",                          bucket = "food" },
+    { pattern = "[Mm]ead",                          bucket = "food" },
+    { pattern = "[Jj]uice",                         bucket = "food" },
+    { pattern = "[Cc]hocolate",                     bucket = "food" },
+    { pattern = "[Cc]andy",                         bucket = "food" },
+    { pattern = "[Hh]oney",                         bucket = "food" },
+    { pattern = "[Aa]pple",                         bucket = "food" },
 }
 
 local function IsConsumableRecord(record)
