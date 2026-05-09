@@ -177,7 +177,7 @@ function AuberdineExporterUI:CreateMainFrame()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)  -- Adjusted for icon
-    frame.title:SetText("Auberdine Exporter v" .. (GetAddOnMetadata("AuberdineExporter", "Version") or "1.4.0"))
+    frame.title:SetText("Auberdine Exporter v" .. (GetAddOnMetadata("AuberdineExporter", "Version") or "1.5.1"))
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -1482,7 +1482,7 @@ function AuberdineExporterUI:ShowHelpPopup()
     
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", 30, -12)
-    frame.title:SetText("Aide - Auberdine Exporter v" .. (GetAddOnMetadata("AuberdineExporter", "Version") or "1.4.0"))
+    frame.title:SetText("Aide - Auberdine Exporter v" .. (GetAddOnMetadata("AuberdineExporter", "Version") or "1.5.1"))
     frame.title:SetTextColor(1, 1, 1)
     
     -- Close button
@@ -1515,7 +1515,7 @@ function AuberdineExporterUI:ShowHelpPopup()
     helpText:SetJustifyH("LEFT")
     helpText:SetSpacing(3)
     helpText:SetText(
-        "|cffffcc00=== INTERFACE UNIFIÉE v1.4.0 ===|r\n\n" ..
+        "|cffffcc00=== INTERFACE UNIFIÉE v1.5.1 ===|r\n\n" ..
         
         "|cff77ff77[*] OBJECTIF PRINCIPAL|r\n" ..
         "Gérer vos personnages et exporter vos données de métiers pour auberdine.eu\n\n" ..

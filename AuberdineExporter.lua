@@ -2578,7 +2578,7 @@ frame:RegisterEvent("CRAFT_SHOW")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("QUEST_TURNED_IN")
--- Inventaire complet & consommables (mobile v1.4.0/v1.4.1)
+-- Inventaire complet & consommables (v1.5.1)
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:RegisterEvent("BANKFRAME_OPENED")
@@ -2738,7 +2738,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 AuberdineExporterDB.characters[charKey].equipment = GetCharacterEquipment()
                 AuberdineExporterDB.characters[charKey].lastUpdate = time()
             end
-            -- Inventory complet (champ .inventory.equipment, dressroom mobile v1.4.0)
+            -- Inventory complet (champ .inventory.equipment, dressroom v1.5.1)
             ScheduleEquipmentScan()
         end
     elseif event == "CHARACTER_POINTS_CHANGED" then
@@ -2886,7 +2886,7 @@ local function HandleSlashCommand(msg)
                 mainFrame:UpdateContent()
             end
         end
-        -- Scan inventaire complet en parallèle (mobile v1.4.0/v1.4.1)
+        -- Scan inventaire complet en parallèle (v1.5.1)
         local equipCount, bagCount, bankCount, consumableCount = ScanFullInventory()
         print(string.format(
             "|cff00ff00AuberdineExporter:|r Inventaire scanné : %d équipement, %d objets en sacs, %d en banque, %d consommables uniques.",
