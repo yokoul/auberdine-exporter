@@ -291,6 +291,27 @@ local function GetCurrentCharacterKey()
     return playerName .. "-" .. realmName
 end
 
+-- Stats du personnage (valeurs effectives en jeu). select(2, ...) = valeur effective.
+local function GetCharacterStats()
+    local _, str = UnitStat("player", 1)
+    local _, agi = UnitStat("player", 2)
+    local _, sta = UnitStat("player", 3)
+    local _, int = UnitStat("player", 4)
+    local _, spi = UnitStat("player", 5)
+    local _, armor = UnitArmor()
+    return {
+        health    = UnitHealthMax("player"),
+        mana      = UnitPowerMax("player", 0),   -- 0 = mana ; 0 si classe sans mana
+        strength  = str,
+        agility   = agi,
+        stamina   = sta,
+        intellect = int,
+        spirit    = spi,
+        armor     = armor,
+        scannedAt = time(),
+    }
+end
+
 local function InitializeCharacterData()
     -- Verify we're on the correct realm before initializing any data
     if not IsValidRealm() then
@@ -315,6 +336,8 @@ local function InitializeCharacterData()
             reputations = GetCharacterReputations(),
             equipment = GetCharacterEquipment(),
             talents = GetCharacterTalents(),
+            stats = GetCharacterStats(),
+            money = GetMoney(),
             -- Quêtes terminées (populées par ReconcileCompletedQuests + event QUEST_TURNED_IN).
             -- Format: { ["questID"] = timestamp }
             completedQuests = {}
@@ -327,6 +350,8 @@ local function InitializeCharacterData()
         AuberdineExporterDB.characters[charKey].reputations = GetCharacterReputations()
         AuberdineExporterDB.characters[charKey].equipment = GetCharacterEquipment()
         AuberdineExporterDB.characters[charKey].talents = GetCharacterTalents()
+        AuberdineExporterDB.characters[charKey].stats = GetCharacterStats()
+        AuberdineExporterDB.characters[charKey].money = GetMoney()
         AuberdineExporterDB.characters[charKey].lastUpdate = time()
         -- Assurer la présence du champ pour les chars créés avant la v1.5.0
         AuberdineExporterDB.characters[charKey].completedQuests =
@@ -2580,6 +2605,7 @@ frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("QUEST_TURNED_IN")
 -- Inventaire complet & consommables (v1.5.1)
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_MONEY")
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:RegisterEvent("BANKFRAME_OPENED")
 frame:RegisterEvent("BANKFRAME_CLOSED")
@@ -2769,6 +2795,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
             C_Timer.After(3, function()
                 ScanFullInventory()
             end)
+        end
+    elseif event == "PLAYER_MONEY" then
+        local charKey = GetCurrentCharacterKey()
+        if charKey and AuberdineExporterDB.characters[charKey] then
+            AuberdineExporterDB.characters[charKey].money = GetMoney()
         end
     elseif event == "BAG_UPDATE_DELAYED" then
         if IsValidRealm() then
