@@ -298,7 +298,7 @@ local function GetCharacterStats()
     local _, sta = UnitStat("player", 3)
     local _, int = UnitStat("player", 4)
     local _, spi = UnitStat("player", 5)
-    local _, armor = UnitArmor()
+    local _, armor = UnitArmor("player")
     return {
         health    = UnitHealthMax("player"),
         mana      = UnitPowerMax("player", 0),   -- 0 = mana ; 0 si classe sans mana
@@ -340,7 +340,10 @@ local function InitializeCharacterData()
             money = GetMoney(),
             -- Quêtes terminées (populées par ReconcileCompletedQuests + event QUEST_TURNED_IN).
             -- Format: { ["questID"] = timestamp }
-            completedQuests = {}
+            completedQuests = {},
+            -- Recettes apprises (journal). Populé par l'event LEARNED_SPELL_IN_TAB + diff au scan.
+            -- Format: { ["<spellID|nom>"] = { name, spellID, recipeID, itemID, profession, learnedAt } }
+            learnedRecipes = {}
         }
         -- Character initialization message disabled for cleaner experience
         -- print("|cff00ff00AuberdineExporter:|r Personnage " .. UnitName("player") .. " initialisé (locale: " .. locale .. ")")
@@ -356,6 +359,9 @@ local function InitializeCharacterData()
         -- Assurer la présence du champ pour les chars créés avant la v1.5.0
         AuberdineExporterDB.characters[charKey].completedQuests =
             AuberdineExporterDB.characters[charKey].completedQuests or {}
+        -- Idem pour le journal des recettes apprises (chars créés avant cette fonctionnalité)
+        AuberdineExporterDB.characters[charKey].learnedRecipes =
+            AuberdineExporterDB.characters[charKey].learnedRecipes or {}
     end
     return charKey
 end
@@ -397,6 +403,108 @@ local function ReconcileCompletedQuests(charKey)
     for _ in pairs(charData.completedQuests) do total = total + 1 end
 
     return { added = added, total = total }
+end
+
+-- Résout le nom d'un sort (recette) de façon compatible Classic Era et évolutions d'API.
+local function ResolveSpellName(spellID)
+    if not spellID then return nil end
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellID)
+        if info and info.name then return info.name end
+    end
+    if GetSpellInfo then
+        local n = GetSpellInfo(spellID)
+        if n then return n end
+    end
+    return nil
+end
+
+-- Journal d'apprentissage des recettes.
+-- Crée une entrée datée { name, spellID, recipeID, itemID, profession, learnedAt }.
+-- L'association recipeID/itemID est résolue immédiatement via LibRecipes pour éviter
+-- un null() côté auberdine.eu à l'import. Dédup par spellID, à défaut par nom (couvre
+-- à la fois l'event live et le diff au scan, qui peuvent voir la même recette).
+-- itemID/recipeID peuvent être fournis (déjà résolus au scan) ; sinon on complète via LibRecipes,
+-- dans les deux sens (spellID→item/recipe, ou itemID→recipe/spell).
+-- Retourne true si une nouvelle entrée a été créée.
+local function RecordLearnedRecipe(charKey, name, spellID, profession, when, itemID, recipeID)
+    if not charKey then return false end
+    local charData = AuberdineExporterDB.characters[charKey]
+    if not charData then return false end
+    if not name and not spellID then return false end
+    charData.learnedRecipes = charData.learnedRecipes or {}
+
+    -- Dédup : même sort, même objet créé, ou même nom.
+    for _, e in pairs(charData.learnedRecipes) do
+        if (spellID and e.spellID == spellID)
+            or (itemID and e.itemID == itemID)
+            or (name and e.name == name) then
+            return false
+        end
+    end
+
+    -- Compléter l'association via LibRecipes (ce qui manque seulement).
+    if spellID and LibRecipes and LibRecipes.GetSpellInfo and (not recipeID or not itemID) then
+        local ok, rId, iId = pcall(function() return LibRecipes:GetSpellInfo(spellID) end)
+        if ok then
+            recipeID = recipeID or rId
+            itemID = itemID or iId
+        end
+    end
+    if not spellID and itemID and LibRecipes and LibRecipes.GetItemInfo then
+        local ok, rId, sId = pcall(function() return LibRecipes:GetItemInfo(itemID) end)
+        if ok then
+            recipeID = recipeID or rId
+            spellID = sId
+        end
+    end
+
+    local key = (spellID and tostring(spellID))
+        or (itemID and ("item:" .. tostring(itemID)))
+        or ("name:" .. tostring(name))
+    charData.learnedRecipes[key] = {
+        name = name or ResolveSpellName(spellID),
+        spellID = spellID,
+        recipeID = recipeID,
+        itemID = itemID,
+        profession = profession,
+        learnedAt = when or time(),
+    }
+    charData.lastUpdate = time()
+    return true
+end
+
+-- Diffe les recettes nouvellement présentes par rapport au dernier scan stocké
+-- (comparaison par NOM, stable contrairement aux index), et crée une entrée de journal.
+-- Baseline silencieuse : si aucun scan précédent n'existe pour ce métier, aucune entrée
+-- n'est créée — les recettes déjà connues ne doivent pas remplir le journal.
+-- À appeler AVANT d'écraser professions[normalizedName].
+local function DiffNewlyLearnedRecipes(charKey, normalizedName, newRecipes)
+    if not charKey then return 0 end
+    local charData = AuberdineExporterDB.characters[charKey]
+    if not charData then return 0 end
+    local existing = charData.professions and charData.professions[normalizedName]
+    local hadBaseline = existing and existing.recipes and next(existing.recipes) ~= nil
+    if not hadBaseline then
+        return 0  -- premier scan de ce métier → baseline, pas de journal
+    end
+
+    local oldNames = {}
+    for _, rd in pairs(existing.recipes) do
+        if rd.name then oldNames[rd.name] = true end
+    end
+
+    local added = 0
+    local now = time()
+    for _, rd in pairs(newRecipes) do
+        if rd.name and not oldNames[rd.name] then
+            if RecordLearnedRecipe(charKey, rd.name, rd.id, normalizedName, now, rd.itemID, rd.recipeID) then
+                added = added + 1
+                print("|cff00ff00AuberdineExporter:|r Nouvelle recette apprise : " .. rd.name)
+            end
+        end
+    end
+    return added
 end
 
 -- Scan all character professions (including gathering)
@@ -1662,6 +1770,10 @@ function ExportToJSON()
                 -- Alimentée par ReconcileCompletedQuests au PLAYER_LOGIN + event QUEST_TURNED_IN.
                 completedQuests = charData.completedQuests or {},
 
+                -- Journal des recettes apprises — map { "<spellID|nom>" = { name, spellID, recipeID, itemID, profession, learnedAt } }
+                -- Alimentée par l'event LEARNED_SPELL_IN_TAB + diff au scan des métiers. recipeID/itemID résolus via LibRecipes.
+                learnedRecipes = charData.learnedRecipes or {},
+
                 -- Inventaire (dressroom) : équipement présent en sacs/banque, en plus de celui porté
                 inventory = charData.inventory or { equipment = {}, bags = {}, bank = { main = nil, bags = {} } },
 
@@ -1691,6 +1803,8 @@ function ExportToJSON()
                             recipeCount = recipeCount + 1
                             table.insert(recipesList, {
                                 id = recipeData.id,
+                                itemID = recipeData.itemID,
+                                recipeID = recipeData.recipeID,
                                 name = recipeData.name,
                                 spellLink = recipeData.spellLink
                             })
@@ -2416,15 +2530,37 @@ local function OnTradeSkillShow()
                     end
                     local spellLink = nil
                     local spellID = nil
+                    local itemID = nil
+                    local recipeID = nil
                     local idSource = nil
+                    -- 1) Lien recette : souvent nil sur Classic Era (GetTradeSkillRecipeLink ne renvoie
+                    --    rien pour beaucoup de métiers), mais gardé en best-effort s'il répond.
                     if GetTradeSkillRecipeLink then
-                        spellLink = GetTradeSkillRecipeLink()
+                        spellLink = GetTradeSkillRecipeLink(i)
                         if spellLink and spellLink ~= "" then
                             spellID = tonumber(string.match(spellLink, "spell:(%d+)") or string.match(spellLink, "enchant:(%d+)") or string.match(spellLink, "craft:(%d+)"))
                             if spellID then idSource = "link" end
                         end
                     end
-                    -- Fallback: tenter d'extraire l'ID via le tooltip si non trouvé
+                    -- 2) Lien de l'OBJET CRÉÉ : fiable sur Classic Era. On en tire l'itemID, puis
+                    --    LibRecipes:GetItemInfo(itemID) → recipeID + spellID (résout l'association).
+                    if GetTradeSkillItemLink then
+                        local itemLink = GetTradeSkillItemLink(i)
+                        if itemLink and itemLink ~= "" then
+                            itemID = tonumber(string.match(itemLink, "item:(%d+)"))
+                        end
+                    end
+                    if itemID and LibRecipes and LibRecipes.GetItemInfo then
+                        local ok, rId, sId = pcall(function() return LibRecipes:GetItemInfo(itemID) end)
+                        if ok then
+                            recipeID = rId
+                            if not spellID and sId then
+                                spellID = sId
+                                idSource = "libitem"
+                            end
+                        end
+                    end
+                    -- 3) Fallback tooltip (stub par défaut → nil)
                     if not spellID then
                         spellID = GetSpellIDFromTooltip()
                         if spellID then idSource = "tooltip" end
@@ -2434,9 +2570,13 @@ local function OnTradeSkillShow()
                     if oldSelection and oldSelection > 0 and SelectTradeSkill then
                         SelectTradeSkill(oldSelection)
                     end
-                    local recipeKey = (spellID and (spellID .. "_" .. recipeName)) or (i .. "_" .. recipeName)
+                    local recipeKey = (spellID and (spellID .. "_" .. recipeName))
+                        or (itemID and ("item" .. itemID .. "_" .. recipeName))
+                        or (i .. "_" .. recipeName)
                     recipes[recipeKey] = {
                         id = spellID,
+                        itemID = itemID,
+                        recipeID = recipeID,
                         idSource = idSource,
                         name = recipeName,
                         type = recipeType,
@@ -2455,6 +2595,9 @@ local function OnTradeSkillShow()
 
             local charKey = InitializeCharacterData()
             if not recipes or type(recipes) ~= "table" then recipes = {} end
+            -- Journal : détecter les recettes apprises depuis le dernier scan (baseline silencieuse)
+            -- AVANT d'écraser l'entrée du métier ci-dessous.
+            DiffNewlyLearnedRecipes(charKey, normalizedName, recipes)
             AuberdineExporterDB.characters[charKey].professions[normalizedName] = {
                 name = skillName, -- Nom original pour l'affichage
                 normalizedName = normalizedName,
@@ -2526,7 +2669,8 @@ local function OnCraftShow()
                         local recipeID = nil
                         local idSource = nil
                         if GetCraftRecipeLink then
-                            spellLink = GetCraftRecipeLink()
+                            -- Classic Era : l'API attend l'index du craft (cf. GetTradeSkillRecipeLink).
+                            spellLink = GetCraftRecipeLink(i)
                             if spellLink and spellLink ~= "" then
                                 recipeID = tonumber(spellLink:match("spell:(%d+)") ) or 
                                           tonumber(spellLink:match("enchant:(%d+)") ) or
@@ -2567,6 +2711,9 @@ local function OnCraftShow()
             -- Toujours garantir que recipes est une table
             local charKey = InitializeCharacterData()
             if not recipes or type(recipes) ~= "table" then recipes = {} end
+            -- Journal : détecter les recettes apprises depuis le dernier scan (baseline silencieuse)
+            -- AVANT d'écraser l'entrée du métier ci-dessous.
+            DiffNewlyLearnedRecipes(charKey, normalizedName, recipes)
             AuberdineExporterDB.characters[charKey].professions[normalizedName] = {
                 name = skillName, -- Nom original pour l'affichage
                 normalizedName = normalizedName,
@@ -2603,6 +2750,8 @@ frame:RegisterEvent("CRAFT_SHOW")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("QUEST_TURNED_IN")
+-- Apprentissage d'une recette (journal) — best-effort, complété par le diff au scan des métiers
+frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 -- Inventaire complet & consommables (v1.5.1)
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_MONEY")
@@ -2786,6 +2935,22 @@ frame:SetScript("OnEvent", function(self, event, ...)
                     charData.completedQuests = charData.completedQuests or {}
                     charData.completedQuests[tostring(questID)] = time()
                     charData.lastUpdate = time()
+                end
+            end
+        end
+    elseif event == "LEARNED_SPELL_IN_TAB" then
+        -- arg1 = spellID du sort appris. On ne garde que les sorts reconnus comme
+        -- recettes par LibRecipes (filtre les sorts de classe). Horodatage précis ;
+        -- le diff au scan des métiers sert de filet si l'event est manqué.
+        if IsValidRealm() then
+            local spellID = ...
+            if spellID and LibRecipes and LibRecipes.GetSpellInfo then
+                local ok, recipeID = pcall(function() return LibRecipes:GetSpellInfo(spellID) end)
+                if ok and recipeID then
+                    local name = ResolveSpellName(spellID)
+                    if RecordLearnedRecipe(GetCurrentCharacterKey(), name, spellID, nil, time()) then
+                        print("|cff00ff00AuberdineExporter:|r Recette apprise : " .. (name or ("sort " .. tostring(spellID))))
+                    end
                 end
             end
         end
