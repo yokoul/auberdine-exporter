@@ -312,6 +312,52 @@ local function GetCharacterStats()
     }
 end
 
+-- Données PvP (système d'honneur Classic Era). Chaque API est gardée car certaines
+-- peuvent être absentes selon la phase/le client. Snapshot rafraîchi à chaque init (login).
+local function GetCharacterPVP()
+    local pvp = { scannedAt = time() }
+
+    -- Kills honorables/déshonorants à vie + rang le plus élevé jamais atteint
+    if GetPVPLifetimeStats then
+        local hk, dk, highestRank = GetPVPLifetimeStats()
+        pvp.lifetimeHonorableKills = hk
+        pvp.lifetimeDishonorableKills = dk
+        pvp.highestRank = highestRank
+    end
+    -- Cette semaine
+    if GetPVPThisWeekStats then
+        local hk, contribution = GetPVPThisWeekStats()
+        pvp.thisWeekHonorableKills = hk
+        pvp.thisWeekContribution = contribution
+    end
+    -- Semaine dernière (avec standing/classement)
+    if GetPVPLastWeekStats then
+        local hk, contribution, standing = GetPVPLastWeekStats()
+        pvp.lastWeekHonorableKills = hk
+        pvp.lastWeekContribution = contribution
+        pvp.lastWeekStanding = standing
+    end
+    -- Hier
+    if GetPVPYesterdayStats then
+        local hk, contribution = GetPVPYesterdayStats()
+        pvp.yesterdayHonorableKills = hk
+        pvp.yesterdayContribution = contribution
+    end
+    -- Rang & titre courants. Dans le système vanilla, le NOM du rang EST le titre PvP.
+    if UnitPVPRank then
+        local rank = UnitPVPRank("player")
+        pvp.rankIndex = rank
+        if rank and rank > 0 and GetPVPRankInfo then
+            local ok, rankName, rankNumber = pcall(GetPVPRankInfo, rank)
+            if ok then
+                pvp.rankName = rankName     -- ex. "Soldat", "Maréchal de la Garde"
+                pvp.rankNumber = rankNumber -- 0..14
+            end
+        end
+    end
+    return pvp
+end
+
 local function InitializeCharacterData()
     -- Verify we're on the correct realm before initializing any data
     if not IsValidRealm() then
@@ -338,6 +384,7 @@ local function InitializeCharacterData()
             talents = GetCharacterTalents(),
             stats = GetCharacterStats(),
             money = GetMoney(),
+            pvp = GetCharacterPVP(),
             -- Quêtes terminées (populées par ReconcileCompletedQuests + event QUEST_TURNED_IN).
             -- Format: { ["questID"] = timestamp }
             completedQuests = {},
@@ -355,6 +402,7 @@ local function InitializeCharacterData()
         AuberdineExporterDB.characters[charKey].talents = GetCharacterTalents()
         AuberdineExporterDB.characters[charKey].stats = GetCharacterStats()
         AuberdineExporterDB.characters[charKey].money = GetMoney()
+        AuberdineExporterDB.characters[charKey].pvp = GetCharacterPVP()
         AuberdineExporterDB.characters[charKey].lastUpdate = time()
         -- Assurer la présence du champ pour les chars créés avant la v1.5.0
         AuberdineExporterDB.characters[charKey].completedQuests =
@@ -1778,7 +1826,19 @@ function ExportToJSON()
                 inventory = charData.inventory or { equipment = {}, bags = {}, bank = { main = nil, bags = {} } },
 
                 -- Consommables agrégés (potions, flacons, nourriture, juju...) — stocks par perso
-                consumables = charData.consumables or { items = {}, lastUpdate = 0 }
+                consumables = charData.consumables or { items = {}, lastUpdate = 0 },
+
+                -- Argent du personnage en cuivre total (stocké en v1.6.0, EXPORTÉ à partir de v1.6.2)
+                money = charData.money or 0,
+
+                -- Attributs/stats du personnage : health, mana, strength, agility, stamina,
+                -- intellect, spirit, armor (stockés en v1.6.0, EXPORTÉS à partir de v1.6.2).
+                -- Clé distincte de "stats" ci-dessus qui contient les compteurs d'agrégats.
+                attributes = charData.stats or {},
+
+                -- PvP (v1.6.2) : kills honorables (semaine/semaine dernière/hier/à vie),
+                -- contribution d'honneur, rang (index/numéro) et titre (nom du rang).
+                pvp = charData.pvp or {}
             }
             
             -- Ajouter localisation si c'est le personnage connecté
