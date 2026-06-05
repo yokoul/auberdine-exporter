@@ -29,6 +29,7 @@ local SCAN_THROTTLE = 2                     -- secondes min entre deux diffs
 local PERIODIC_SCAN = 60                    -- re-scan périodique
 local HINT_TTL = 60                         -- durée de vie d'un indice d'acteur
 local EXPORT_MAX_AGE = 30 * 24 * 60 * 60    -- plafond export : 30 jours
+local FULL_REFRESH_INTERVAL = 7 * 24 * 60 * 60  -- full auto si le dernier date de +7 jours (re-sync rangs/roster)
 
 -- ===================== Réglages =====================
 
@@ -369,10 +370,18 @@ local function CountLogSince(g, since)
     return n
 end
 
+-- Décide si l'export doit être complet (full) : 1er export, resync manuel,
+-- ou refresh périodique automatique (rangs/roster) au-delà de FULL_REFRESH_INTERVAL
+local function ShouldFullExport(g, s, now)
+    if s.forceFullExport then return true end
+    if not g.lastExportTs or g.lastExportTs == 0 then return true end
+    return (now - (g.lastFullExportTs or 0)) >= FULL_REFRESH_INTERVAL
+end
+
 -- Estimation (octets) de la taille du PROCHAIN export pour une guilde
 local function EstimateExportBytes(g, s)
     local now = time()
-    local full = s.forceFullExport or not g.lastExportTs or g.lastExportTs == 0
+    local full = ShouldFullExport(g, s, now)
     local floor = now - EXPORT_MAX_AGE
     local since = full and floor or math.max(g.lastExportTs, floor)
     local bytes = 80 + CountLogSince(g, since) * 90
@@ -395,7 +404,7 @@ function GT:GetExportData()
     local out = {}
     for _, g in pairs(guilds) do
         if g.share ~= false and g.name then
-            local full = s.forceFullExport or not g.lastExportTs or g.lastExportTs == 0
+            local full = ShouldFullExport(g, s, now)
             local floor = now - EXPORT_MAX_AGE
             local since = full and floor or math.max(g.lastExportTs, floor)
 
@@ -424,6 +433,7 @@ function GT:GetExportData()
                 end
                 entry.members = members
                 entry.memberCount = #members
+                g.lastFullExportTs = now
             end
 
             out[#out + 1] = entry

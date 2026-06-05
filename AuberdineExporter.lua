@@ -648,7 +648,7 @@ end
 local function GetAddonVersion()
     local addonName = "AuberdineExporter"
     local version = GetAddOnMetadata(addonName, "Version")
-    return version or "1.6.3" -- Fallback au cas où la lecture échoue
+    return version or "1.6.4" -- Fallback au cas où la lecture échoue
 end
 
 -- Clé client publique pour auberdine.eu
