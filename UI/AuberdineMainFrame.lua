@@ -835,7 +835,6 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     
     local settings = AuberdineExporterDB and AuberdineExporterDB.settings or {
         autoScan = true,
-        shareData = true,
         minimapButtonHidden = false
     }
     local yOffset = -10
@@ -858,20 +857,7 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     end)
     
     yOffset = yOffset - 30
-    
-    -- Share data setting
-    local shareDataCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    shareDataCheck:SetPoint("TOPLEFT", 10, yOffset)
-    shareDataCheck:SetChecked(settings.shareData)
-    shareDataCheck.text:SetText("Partager les données entre personnages")
-    shareDataCheck:SetScript("OnClick", function(self)
-        if AuberdineExporterDB and AuberdineExporterDB.settings then
-            AuberdineExporterDB.settings.shareData = self:GetChecked()
-        end
-    end)
-    
-    yOffset = yOffset - 30
-    
+
     -- Minimap button setting
     local minimapCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     minimapCheck:SetPoint("TOPLEFT", 10, yOffset)

@@ -67,6 +67,10 @@ vue unifiée (357 lignes) : `CreateMainFrameContent`, `ShowTab`,
 `CreateOverviewTab`, `CreateCharactersTab`, `CreateCharacterConfigTab`,
 `CreateExportTab`. `CreateSettingsTab` est conservé (réutilisé par le bouton).
 
+Retrait aussi du réglage **« Partager les données entre personnages »**
+(`shareData`) : la case était inerte (écrite mais jamais lue), l'export étant
+déjà au niveau du compte. Case + champ supprimés.
+
 ### 📚 **Documentation**
 - `docs/GUILD-TRACKING.md` — fonctionnement détaillé du module.
 - `server/GUILD-IMPORT.md` — contrat d'import serveur (clé `guilds`,

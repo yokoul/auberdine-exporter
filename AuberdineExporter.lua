@@ -2839,7 +2839,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
                     characters = {},
                     settings = {
                         autoScan = true,
-                        shareData = true,
                         exportFormat = "json",
                         minimapButtonAngle = 0,
                         minimapButtonHidden = false,
@@ -2870,7 +2869,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 characters = {},
                 settings = {
                     autoScan = true,
-                    shareData = true,
                     exportFormat = "json",
                     minimapButtonAngle = 0,
                     minimapButtonHidden = false,
