@@ -2725,7 +2725,7 @@ local function HandleSlashCommand(msg)
         elseif sub == "resync" or sub == "full" then
             GT:ResyncCurrent()
         elseif sub == "clear" or sub == "reset" then
-            GT:ClearCurrent()
+            GT:ClearCurrentLog()
         else
             GT:PrintSummary()
         end
@@ -2894,7 +2894,7 @@ local function HandleSlashCommand(msg)
         print("  /auberdine guild list - Lister les guildes suivies et leur partage")
         print("  /auberdine guild share <on|off> - (Dé)activer le partage/export de la guilde courante")
         print("  /auberdine guild resync - Forcer un export complet au prochain export")
-        print("  /auberdine guild clear - Réinitialiser les données de la guilde courante")
+        print("  /auberdine guild clear - Effacer le journal de la guilde courante")
         print("")
         print("|cffff8000=== GESTION DES PERSONNAGES (v1.3.2) ===|r")
         print("  /auberdine characters - Lister tous les personnages et leur config")

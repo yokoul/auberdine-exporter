@@ -23,7 +23,8 @@ AuberdineExporter.GuildTracker = GT
 
 -- ===================== Configuration =====================
 
-local MAX_LOG = 1000                       -- taille max du journal local par guilde
+local MAX_LOG = 1000                       -- taille max par défaut du journal (configurable dans l'UI)
+local HARD_MAX_LOG = 50000                 -- garde-fou absolu (protège la SavedVariable)
 local SCAN_THROTTLE = 2                     -- secondes min entre deux diffs
 local PERIODIC_SCAN = 60                    -- re-scan périodique
 local HINT_TTL = 60                         -- durée de vie d'un indice d'acteur
@@ -45,6 +46,7 @@ local function GuildSettings()
     if s.exportPublicNotes == nil then s.exportPublicNotes = true end
     if s.trackNoteChanges == nil then s.trackNoteChanges = true end
     if s.forceFullExport == nil then s.forceFullExport = false end
+    if s.maxLog == nil then s.maxLog = MAX_LOG end
     return s
 end
 function GT:GetSettings() return GuildSettings() end
@@ -166,7 +168,10 @@ end
 local function AddLog(g, entry)
     entry.ts = entry.ts or time()
     g.log[#g.log + 1] = entry
-    local excess = #g.log - MAX_LOG
+    -- Plafond configurable (0 / négatif = illimité, borné par le garde-fou)
+    local cap = GuildSettings().maxLog or MAX_LOG
+    if not cap or cap <= 0 or cap > HARD_MAX_LOG then cap = HARD_MAX_LOG end
+    local excess = #g.log - cap
     while excess > 0 do
         table.remove(g.log, 1)
         excess = excess - 1
@@ -589,18 +594,31 @@ function GT:ResyncCurrent()
     GuildPrint("Prochain export forcé en mode |cffffd200complet|r (roster + journal).")
 end
 
--- Efface le journal + roster de la guilde courante (garde le drapeau share)
-function GT:ClearCurrent()
-    local g, key = CurrentGuild()
-    if not g or not key then
+-- Efface le JOURNAL d'une guilde (garde le roster et le drapeau share, pour
+-- éviter de re-générer des JOIN au prochain scan).
+function GT:ClearLogByKey(key)
+    local guilds = EnsureGuildsDB()
+    if guilds and guilds[key] then
+        guilds[key].log = {}
+        return true
+    end
+    return false
+end
+
+function GT:GetGuildName(key)
+    local guilds = EnsureGuildsDB()
+    return guilds and guilds[key] and guilds[key].name or key
+end
+
+-- Efface le journal de la guilde courante
+function GT:ClearCurrentLog()
+    local _, key = CurrentGuild()
+    if not key then
         GuildPrint("Vous n'êtes pas dans une guilde.")
         return
     end
-    local share = g.share
-    AuberdineExporterDB.guilds[key] = nil
-    local fresh = EnsureGuild(key)
-    if fresh then fresh.share = share end
-    GuildPrint("Données de la guilde courante réinitialisées.")
+    GT:ClearLogByKey(key)
+    GuildPrint("Journal de la guilde courante effacé.")
 end
 
 -- ===================== Événements =====================

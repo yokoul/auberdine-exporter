@@ -103,8 +103,11 @@ L'export d'un gros roster + tout l'historique peut dépasser la limite de
 - ☑ **Activer le suivi de guilde** (interrupteur global)
 - ☑ **Exporter les notes publiques** (décoché = export plus léger)
 - ☑ **Journaliser les changements de note** (décoché = moins de bruit)
+- 🔢 **Taille max du journal par guilde** (rétention configurable, 50 à 50000 ;
+  les plus anciens événements sont purgés au-delà)
 - ☑ **Partager « Nom de guilde »** par guilde, avec **taille estimée** du
-  prochain export (KB) à côté de chaque guilde
+  prochain export (KB) — et un bouton **« Vider »** pour effacer le journal de
+  cette guilde (le roster est conservé)
 - 🔘 **Forcer un export complet (resync)**
 
 ## Commandes
