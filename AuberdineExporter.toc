@@ -1,9 +1,9 @@
 
 ## Interface: 11508
 ## Title: Auberdine Exporter
-## Notes: Exporte recettes, skills, réputations, équipement et consommables pour WoW Classic Era (Auberdine.eu)
+## Notes: Exporte recettes, skills, réputations, équipement, consommables et activités de guilde pour WoW Classic Era (Auberdine.eu)
 ## Author: yokoul - auberdine.eu
-## Version: 1.6.2
+## Version: 1.6.3
 ## SavedVariables: AuberdineExporterDB
 ## IconTexture: Interface/AddOns/AuberdineExporter/UI/Icons/ab64.png
 
@@ -18,3 +18,6 @@ UI\AuberdineMinimapButton.lua
 
 # Main addon
 AuberdineExporter.lua
+
+# Guild tracking
+GuildTracker.lua

@@ -1205,8 +1205,127 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
         end
     end)
     
-    yOffset = yOffset - 50
-    
+    yOffset = yOffset - 40
+
+    -- ===== Section Suivi de guilde =====
+    local GT = AuberdineExporter and AuberdineExporter.GuildTracker
+    local gsettings = GT and GT:GetSettings() or { enabled = true, exportPublicNotes = true, trackNoteChanges = true }
+
+    local guildTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    guildTitle:SetPoint("TOPLEFT", 10, yOffset)
+    guildTitle:SetText("Suivi de guilde")
+    guildTitle:SetTextColor(1, 0.82, 0)
+    yOffset = yOffset - 30
+
+    -- Activer le suivi
+    local guildEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    guildEnableCheck:SetPoint("TOPLEFT", 10, yOffset)
+    guildEnableCheck:SetChecked(gsettings.enabled)
+    guildEnableCheck.text:SetText("Activer le suivi de guilde")
+    guildEnableCheck:SetScript("OnClick", function(self)
+        if GT then GT:GetSettings().enabled = self:GetChecked() and true or false end
+    end)
+    yOffset = yOffset - 28
+
+    -- Exporter les notes publiques
+    local guildNotesCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    guildNotesCheck:SetPoint("TOPLEFT", 10, yOffset)
+    guildNotesCheck:SetChecked(gsettings.exportPublicNotes)
+    guildNotesCheck.text:SetText("Exporter les notes publiques (décoché = export plus léger)")
+    guildNotesCheck:SetScript("OnClick", function(self)
+        if GT then GT:GetSettings().exportPublicNotes = self:GetChecked() and true or false end
+    end)
+    yOffset = yOffset - 28
+
+    -- Taille max du journal (rétention configurable)
+    local maxLogLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    maxLogLabel:SetPoint("TOPLEFT", 14, yOffset - 4)
+    maxLogLabel:SetText("Taille max du journal par guilde :")
+    maxLogLabel:SetTextColor(0.9, 0.9, 0.9)
+
+    local maxLogBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+    maxLogBox:SetSize(70, 20)
+    maxLogBox:SetPoint("TOPLEFT", 240, yOffset)
+    maxLogBox:SetAutoFocus(false)
+    maxLogBox:SetNumeric(true)
+    maxLogBox:SetMaxLetters(6)
+    local curMax = (gsettings.maxLog and gsettings.maxLog > 0) and gsettings.maxLog or 1000
+    maxLogBox:SetText(tostring(curMax))
+    local function commitMaxLog(self)
+        local v = tonumber(self:GetText()) or 1000
+        if v < 50 then v = 50 end
+        if v > 50000 then v = 50000 end
+        self:SetText(tostring(v))
+        if GT then GT:GetSettings().maxLog = v end
+        self:ClearFocus()
+    end
+    maxLogBox:SetScript("OnEnterPressed", commitMaxLog)
+    maxLogBox:SetScript("OnEditFocusLost", commitMaxLog)
+    maxLogBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local maxLogHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    maxLogHint:SetPoint("TOPLEFT", 318, yOffset - 4)
+    maxLogHint:SetText("(50 à 50000, Entrée pour valider)")
+    yOffset = yOffset - 32
+
+    -- Liste des guildes connues + case "Partager"
+    local guildsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    guildsLabel:SetPoint("TOPLEFT", 14, yOffset)
+    guildsLabel:SetText("Guildes partagées :")
+    guildsLabel:SetTextColor(0.8, 0.8, 0.8)
+    yOffset = yOffset - 22
+
+    local tracked = GT and GT:GetTrackedGuilds() or {}
+    if #tracked == 0 then
+        local none = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        none:SetPoint("TOPLEFT", 26, yOffset)
+        none:SetText("Aucune guilde détectée pour l'instant (connectez-vous en guilde).")
+        yOffset = yOffset - 22
+    else
+        local maxRows = 6
+        for i = 1, math.min(#tracked, maxRows) do
+            local gi = tracked[i]
+            local row = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+            row:SetPoint("TOPLEFT", 20, yOffset)
+            row:SetChecked(gi.share)
+            row.text:SetText(string.format("%s  |cff888888(%d membres · ~%.1f KB)|r",
+                gi.name, gi.memberCount, gi.estBytes / 1024))
+            local key = gi.key
+            row:SetScript("OnClick", function(self)
+                if GT then GT:SetShare(key, self:GetChecked() and true or false) end
+            end)
+
+            -- Bouton "Vider le journal" de cette guilde
+            local clearLogBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+            clearLogBtn:SetPoint("TOPLEFT", 360, yOffset + 1)
+            clearLogBtn:SetSize(70, 20)
+            clearLogBtn:SetText("Vider")
+            clearLogBtn:SetScript("OnClick", function()
+                StaticPopup_Show("AUBERDINE_GUILD_CLEAR_LOG", gi.name, nil, { key = key, name = gi.name })
+            end)
+            yOffset = yOffset - 24
+        end
+        if #tracked > maxRows then
+            local more = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            more:SetPoint("TOPLEFT", 26, yOffset)
+            more:SetText(string.format("... +%d autres (voir /auberdine guild list)", #tracked - maxRows))
+            yOffset = yOffset - 22
+        end
+    end
+
+    -- Bouton resync complet
+    local resyncBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    resyncBtn:SetPoint("TOPLEFT", 20, yOffset)
+    resyncBtn:SetSize(240, 22)
+    resyncBtn:SetText("Forcer un export complet (resync)")
+    resyncBtn:SetScript("OnClick", function()
+        if GT then
+            GT:RequestFullResync()
+            print("|cff00ff00AuberdineExporter|r |cffffd200[Guilde]|r Prochain export forcé en mode complet.")
+        end
+    end)
+    yOffset = yOffset - 40
+
     -- Reset button
     local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     resetBtn:SetPoint("TOPLEFT", 10, yOffset)
@@ -1358,6 +1477,24 @@ StaticPopupDialogs["AUBERDINE_EXPORTER_RESET_CONFIRM"] = {
             end
             AuberdineExporterDB.characters = {}
             print("|cff00ff00AuberdineExporter:|r Toutes les données ont été réinitialisées !")
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Static popup pour effacer le journal d'une guilde
+StaticPopupDialogs["AUBERDINE_GUILD_CLEAR_LOG"] = {
+    text = "Effacer le journal d'activité de la guilde « %s » ?\n\nLe roster est conservé ; seul l'historique des événements est supprimé.",
+    button1 = "Effacer",
+    button2 = "Annuler",
+    OnAccept = function(self, data)
+        local GT = AuberdineExporter and AuberdineExporter.GuildTracker
+        if GT and data and data.key then
+            GT:ClearLogByKey(data.key)
+            print("|cff00ff00AuberdineExporter|r |cffffd200[Guilde]|r Journal de « " .. (data.name or data.key) .. " » effacé.")
         end
     end,
     timeout = 0,
@@ -1746,12 +1883,19 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             card.groupText:SetTextColor(0.7, 0.7, 0.7) -- Retour normal
         end)
         
-        -- Dropdown pour le rôle (position ajustée et taille réduite)
+        -- Dropdown pour le rôle (centré dans la carte)
+        -- Note : UIDropDownMenuTemplate ajoute ~25px de marges internes autour
+        -- de la largeur "utile". On vise une largeur totale < cardWidth (120)
+        -- pour que le menu reste contenu et centré dans la carte.
         card.roleDropdown = CreateFrame("Frame", nil, card, "UIDropDownMenuTemplate")
-        card.roleDropdown:SetPoint("TOP", 0, -48)
-        card.roleDropdown:SetSize(110, 18)
-        
-        UIDropDownMenu_SetWidth(card.roleDropdown, 110)
+        card.roleDropdown:SetPoint("TOP", 0, -44)
+
+        -- Largeur utile 78 -> largeur totale ~103px, centrée dans une carte de 120px
+        UIDropDownMenu_SetWidth(card.roleDropdown, 78)
+        card.roleDropdown:SetHeight(24)
+        if card.roleDropdown.Text then
+            card.roleDropdown.Text:SetJustifyH("CENTER")
+        end
         local roleText = charInfo.type == "main" and "Main" or 
                         charInfo.type == "alt" and "Alt" or
                         charInfo.type == "bank" and "Banque" or

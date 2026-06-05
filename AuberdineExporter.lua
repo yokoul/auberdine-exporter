@@ -648,7 +648,7 @@ end
 local function GetAddonVersion()
     local addonName = "AuberdineExporter"
     local version = GetAddOnMetadata(addonName, "Version")
-    return version or "1.5.1" -- Fallback au cas où la lecture échoue
+    return version or "1.6.3" -- Fallback au cas où la lecture échoue
 end
 
 -- Clé client publique pour auberdine.eu
@@ -1972,6 +1972,14 @@ function ExportToJSON()
     -- Ajouter des avertissements si nécessaire
     if exportData.summary.totalRecipes == 0 then
         table.insert(exportData.validation.warnings, "Aucune recette trouvée - ouvrez vos fenêtres de métiers")
+    end
+
+    -- NOUVEAU v1.5.0: Données de guilde (multi-guildes, export delta économe)
+    if AuberdineExporter.GuildTracker and AuberdineExporter.GuildTracker.GetExportData then
+        local guildData = AuberdineExporter.GuildTracker:GetExportData()
+        if guildData and guildData.guilds then
+            exportData.guilds = guildData.guilds
+        end
     end
 
     -- Fonction de conversion JSON améliorée avec échappement complet
@@ -3317,6 +3325,40 @@ local function HandleSlashCommand(msg)
             end
         end
     -- NOUVELLES COMMANDES v1.3.2 - Gestion des personnages et comptes
+    elseif command == "guild" then
+        -- /auberdine guild [scan|log|members|clear]
+        local GT = AuberdineExporter.GuildTracker
+        if not GT then
+            print("|cffff0000AuberdineExporter:|r Module de guilde non chargé.")
+            return
+        end
+        local sub = string.lower(args[2] or "")
+        if sub == "scan" then
+            GT:ForceScan()
+            print("|cff00ff00AuberdineExporter|r |cffffd200[Guilde]|r Scan demandé... (résultats dans ~2s)")
+        elseif sub == "log" or sub == "journal" then
+            GT:PrintLog(args[3])
+        elseif sub == "members" or sub == "membres" then
+            GT:PrintMembers()
+        elseif sub == "list" or sub == "guildes" then
+            GT:PrintList()
+        elseif sub == "share" or sub == "partage" then
+            local val = string.lower(args[3] or "")
+            if val == "on" or val == "oui" or val == "enable" then
+                GT:SetCurrentShare(true)
+            elseif val == "off" or val == "non" or val == "disable" then
+                GT:SetCurrentShare(false)
+            else
+                print("|cffff0000AuberdineExporter:|r Usage: /auberdine guild share <on|off>")
+            end
+        elseif sub == "resync" or sub == "full" then
+            GT:ResyncCurrent()
+        elseif sub == "clear" or sub == "reset" then
+            GT:ClearCurrentLog()
+        else
+            GT:PrintSummary()
+        end
+
     elseif command == "settype" then
         -- /auberdine settype main|alt|bank|mule [character]
         local characterType = args[2]
@@ -3472,6 +3514,16 @@ local function HandleSlashCommand(msg)
         print("  /auberdine localsnapshot - Forcer un snapshot local complet (sacs+banque, non exporté)")
         print("  /auberdine recipes - Afficher toutes les recettes avec IDs")
         print("  /auberdine stats - Afficher les statistiques dans le chat")
+        print("")
+        print("|cffff8000=== SUIVI DE GUILDE (v1.5.0) ===|r")
+        print("  /auberdine guild - Résumé de la guilde courante (membres, journal, taille export)")
+        print("  /auberdine guild scan - Forcer un scan du roster de guilde")
+        print("  /auberdine guild members - Lister les membres de la guilde")
+        print("  /auberdine guild log [n] - Afficher les n derniers événements (défaut 20)")
+        print("  /auberdine guild list - Lister les guildes suivies et leur partage")
+        print("  /auberdine guild share <on|off> - (Dé)activer le partage/export de la guilde courante")
+        print("  /auberdine guild resync - Forcer un export complet au prochain export")
+        print("  /auberdine guild clear - Effacer le journal de la guilde courante")
         print("")
         print("|cffff8000=== GESTION DES PERSONNAGES (v1.3.2) ===|r")
         print("  /auberdine characters - Lister tous les personnages et leur config")
