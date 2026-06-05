@@ -749,14 +749,6 @@ function AuberdineExporter:SetAccountKey(newKey)
     return SetAccountKey(newKey)
 end
 
-function AuberdineExporter:IsValidAccountKey(key)
-    return IsValidAccountKey(key)
-end
-
-function AuberdineExporter:GenerateDefaultGroupName()
-    return GenerateDefaultGroupName()
-end
-
 -- Initialiser les paramètres d'un personnage
 function InitializeCharacterSettings(charKey)
     if not AuberdineExporterDB.characterSettings then
@@ -1640,11 +1632,6 @@ AuberdineExporter.ScanBank = function(self) return ScanBank(GetCurrentCharacterK
 AuberdineExporter.RecomputeConsumables = function(self) return RecomputeConsumables(GetCurrentCharacterKey()) end
 AuberdineExporter.ScanLocalSnapshotBags = function(self) return ScanLocalSnapshotBags(GetCurrentCharacterKey()) end
 AuberdineExporter.ScanLocalSnapshotBank = function(self) return ScanLocalSnapshotBank(GetCurrentCharacterKey()) end
-function AuberdineExporter:GetLocalSnapshot(charKey)
-    charKey = charKey or GetCurrentCharacterKey()
-    local charData = AuberdineExporterDB and AuberdineExporterDB.characters and AuberdineExporterDB.characters[charKey]
-    return charData and charData.localSnapshot or nil
-end
 
 -- Implémentation MD5 simplifiée pour WoW Classic
 -- Utilise une approche compatible avec toutes les versions de WoW
@@ -2829,26 +2816,31 @@ frame:RegisterEvent("BANKFRAME_CLOSED")
 frame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
 frame:RegisterEvent("PLAYERBANKBAGSLOTS_CHANGED")
 
+-- Structure par défaut de la base (factorisée : utilisée à ADDON_LOADED et PLAYER_LOGIN)
+local function GetDefaultDB()
+    return {
+        version = GetAddonVersion(),
+        characters = {},
+        settings = {
+            autoScan = true,
+            exportFormat = "json",
+            minimapButtonAngle = 0,
+            minimapButtonHidden = false,
+            verboseDebug = false
+        },
+        characterSettings = {},
+        accountLinks = {},
+        -- S'assurer qu'un groupe unique est créé dès l'initialisation
+        accountGroup = GenerateDefaultGroupName()
+    }
+end
+
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addonName = ...
         if addonName == "AuberdineExporter" then
             if not AuberdineExporterDB then
-                AuberdineExporterDB = {
-                    version = GetAddonVersion(),
-                    characters = {},
-                    settings = {
-                        autoScan = true,
-                        exportFormat = "json",
-                        minimapButtonAngle = 0,
-                        minimapButtonHidden = false,
-                        verboseDebug = false
-                    },
-                    characterSettings = {},
-                    accountLinks = {},
-                    -- S'assurer qu'un groupe unique est créé dès l'initialisation
-                    accountGroup = GenerateDefaultGroupName()
-                }
+                AuberdineExporterDB = GetDefaultDB()
                 -- Database initialization message disabled for cleaner experience
                 -- print("|cff00ff00AuberdineExporter:|r Base de données initialisée à ADDON_LOADED")
             else
@@ -2864,21 +2856,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_LOGIN" then
         -- S'assurer que la base de données principale est complètement initialisée
         if not AuberdineExporterDB then
-            AuberdineExporterDB = {
-                version = GetAddonVersion(),
-                characters = {},
-                settings = {
-                    autoScan = true,
-                    exportFormat = "json",
-                    minimapButtonAngle = 0,
-                    minimapButtonHidden = false,
-                    verboseDebug = false
-                },
-                characterSettings = {},
-                accountLinks = {},
-                -- S'assurer qu'un groupe unique est créé dès l'initialisation
-                accountGroup = GenerateDefaultGroupName()
-            }
+            AuberdineExporterDB = GetDefaultDB()
             -- Database re-initialization message disabled for cleaner experience
             -- print("|cff00ff00AuberdineExporter:|r Base de données réinitialisée à PLAYER_LOGIN")
         else

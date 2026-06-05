@@ -71,6 +71,22 @@ Retrait aussi du réglage **« Partager les données entre personnages »**
 (`shareData`) : la case était inerte (écrite mais jamais lue), l'export étant
 déjà au niveau du compte. Case + champ supprimés.
 
+**Audit complémentaire** (code mort / doublons) :
+- Fonctions jamais appelées supprimées (~240 lignes) : `CreateScrollBars` (185 l.,
+  supplantée par `CreateVerticalScrollBar`), `CreateTreeStructure`
+  (supplantée par `CreateSidebarHierarchy`), `GT:GetGuildName`, les wrappers
+  morts `AuberdineExporter:IsValidAccountKey` / `:GenerateDefaultGroupName`
+  (les `local function` correspondantes restent), et l'accesseur inutilisé
+  `GetLocalSnapshot`.
+- Init de la base **factorisée** : la structure par défaut de
+  `AuberdineExporterDB`, jusqu'ici dupliquée dans les handlers `ADDON_LOADED`
+  et `PLAYER_LOGIN`, passe par un seul `GetDefaultDB()` (fin du risque de
+  divergence entre les deux copies).
+- Suppression du script de test orphelin `test-realm-validation.lua`
+  (jamais chargé, absent du `.toc`).
+- Correctif cosmétique : double décrément `yOffset` (gros trou vertical) dans
+  le panneau Réglages.
+
 ### 📚 **Documentation**
 - `docs/GUILD-TRACKING.md` — fonctionnement détaillé du module.
 - `server/GUILD-IMPORT.md` — contrat d'import serveur (clé `guilds`,

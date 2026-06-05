@@ -605,11 +605,6 @@ function GT:ClearLogByKey(key)
     return false
 end
 
-function GT:GetGuildName(key)
-    local guilds = EnsureGuildsDB()
-    return guilds and guilds[key] and guilds[key].name or key
-end
-
 -- Efface le journal de la guilde courante
 function GT:ClearCurrentLog()
     local _, key = CurrentGuild()
