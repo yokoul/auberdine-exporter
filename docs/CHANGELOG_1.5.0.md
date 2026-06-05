@@ -60,10 +60,10 @@ Pour éviter de dépasser la limite d'export (~50 KO) avec un gros roster :
   append/dédoublonnage du journal. Voir `docs/GUILD-TRACKING.md`.
 
 ### ⚙️ **Options dans l'UI (onglet Réglages → « Suivi de guilde »)**
-- Activer le suivi · Exporter les notes publiques · Journaliser les changements
-  de note · **Taille max du journal** (rétention configurable 50–50000) · case
-  **Partager** par guilde (avec **taille estimée** du prochain export) + bouton
-  **Vider** le journal d'une guilde · bouton **Forcer un export complet (resync)**.
+- Activer le suivi · Exporter les notes publiques · **Taille max du journal**
+  (rétention configurable 50–50000) · case **Partager** par guilde (avec
+  **taille estimée** du prochain export) + bouton **Vider** le journal d'une
+  guilde · bouton **Forcer un export complet (resync)**.
 
 ### 🆕 **Commandes**
 - `/auberdine guild` — résumé de la guilde courante + taille export estimée

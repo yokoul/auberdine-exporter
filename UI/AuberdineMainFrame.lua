@@ -1222,16 +1222,6 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     end)
     yOffset = yOffset - 28
 
-    -- Journaliser les changements de note
-    local guildNoteLogCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    guildNoteLogCheck:SetPoint("TOPLEFT", 10, yOffset)
-    guildNoteLogCheck:SetChecked(gsettings.trackNoteChanges)
-    guildNoteLogCheck.text:SetText("Journaliser les changements de note (décoché = moins de bruit)")
-    guildNoteLogCheck:SetScript("OnClick", function(self)
-        if GT then GT:GetSettings().trackNoteChanges = self:GetChecked() and true or false end
-    end)
-    yOffset = yOffset - 30
-
     -- Taille max du journal (rétention configurable)
     local maxLogLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     maxLogLabel:SetPoint("TOPLEFT", 14, yOffset - 4)
@@ -1817,12 +1807,19 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
             card.groupText:SetTextColor(0.7, 0.7, 0.7) -- Retour normal
         end)
         
-        -- Dropdown pour le rôle (position ajustée et taille réduite)
+        -- Dropdown pour le rôle (centré dans la carte)
+        -- Note : UIDropDownMenuTemplate ajoute ~25px de marges internes autour
+        -- de la largeur "utile". On vise une largeur totale < cardWidth (120)
+        -- pour que le menu reste contenu et centré dans la carte.
         card.roleDropdown = CreateFrame("Frame", nil, card, "UIDropDownMenuTemplate")
-        card.roleDropdown:SetPoint("TOP", 0, -48)
-        card.roleDropdown:SetSize(110, 18)
-        
-        UIDropDownMenu_SetWidth(card.roleDropdown, 110)
+        card.roleDropdown:SetPoint("TOP", 0, -44)
+
+        -- Largeur utile 78 -> largeur totale ~103px, centrée dans une carte de 120px
+        UIDropDownMenu_SetWidth(card.roleDropdown, 78)
+        card.roleDropdown:SetHeight(24)
+        if card.roleDropdown.Text then
+            card.roleDropdown.Text:SetJustifyH("CENTER")
+        end
         local roleText = charInfo.type == "main" and "Main" or 
                         charInfo.type == "alt" and "Alt" or
                         charInfo.type == "bank" and "Banque" or
