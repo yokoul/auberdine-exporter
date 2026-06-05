@@ -98,6 +98,9 @@ L'export d'un gros roster + tout l'historique peut dépasser la limite de
 - `mode: "delta"` → **appliquer le journal** au roster déjà connu (append +
   dédoublonnage), pas de roster fourni.
 
+> 🛠️ **Implémentation de l'importer** : voir `server/GUILD-IMPORT.md`
+> (algorithme full/delta, idempotence, dédup, pièges, checklist).
+
 ## Options dans l'UI (onglet Réglages → « Suivi de guilde »)
 
 - ☑ **Activer le suivi de guilde** (interrupteur global)
