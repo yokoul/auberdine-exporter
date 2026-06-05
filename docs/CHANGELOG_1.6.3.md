@@ -48,6 +48,25 @@ re-scan périodique (60 s) pour capter les changements faits par d'autres.
 `/auberdine guild` (résumé), `scan`, `members`, `log [n]`, `list`,
 `share <on|off>`, `resync`, `clear`.
 
+### 🐛 **Correctif UI : panneau de réglages rebranché**
+Les options de réglages (auto-scan, partage de données, bouton minimap **et la
+section Suivi de guilde**) étaient construites dans `CreateSettingsTab`, lui-même
+rattaché à un **ancien système d'onglets jamais appelé** (`CreateMainFrameContent`).
+Conséquence : ces options ne s'affichaient **nulle part** dans l'UI active (vue
+unifiée), y compris sur la branche d'origine du suivi de guilde.
+- **Nouveau bouton « Réglages »** dans la sidebar gauche → ouvre un panneau qui
+  recouvre la vue des personnages (bascule à chaque clic), construit à la volée
+  via `CreateSettingsTab` (réutilisé tel quel).
+- Les réglages généraux **et** les options de guilde (activer, export des notes,
+  taille max du journal, liste des guildes + partage, *clear-log*, resync) sont
+  désormais accessibles graphiquement.
+
+### 🧹 **Nettoyage de code mort**
+Suppression du système d'onglets orphelin, jamais appelé depuis la refonte en
+vue unifiée (357 lignes) : `CreateMainFrameContent`, `ShowTab`,
+`CreateOverviewTab`, `CreateCharactersTab`, `CreateCharacterConfigTab`,
+`CreateExportTab`. `CreateSettingsTab` est conservé (réutilisé par le bouton).
+
 ### 📚 **Documentation**
 - `docs/GUILD-TRACKING.md` — fonctionnement détaillé du module.
 - `server/GUILD-IMPORT.md` — contrat d'import serveur (clé `guilds`,

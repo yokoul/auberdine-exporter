@@ -247,7 +247,16 @@ function AuberdineExporterUI:CreateMainFrame()
     helpBtn:SetScript("OnClick", function()
         AuberdineExporterUI:ShowHelpPopup()
     end)
-    
+
+    -- Bouton Réglages (ouvre le panneau de réglages : général + suivi de guilde)
+    local settingsBtn = CreateFrame("Button", nil, frame.sidebar, "UIPanelButtonTemplate")
+    settingsBtn:SetPoint("TOP", 0, -235)
+    settingsBtn:SetSize(160, 30)
+    settingsBtn:SetText("Réglages")
+    settingsBtn:SetScript("OnClick", function()
+        AuberdineExporterUI:ToggleSettingsPanel(frame)
+    end)
+
     -- Ajouter la hiérarchie dans la sidebar
     self:CreateSidebarHierarchy(frame.sidebar)
     
@@ -325,6 +334,36 @@ function AuberdineExporterUI:CreateUnifiedCharacterView(parent)
     -- Stocker les références pour l'actualisation
     characterArea.scrollFrame = scrollFrame
     characterArea.content = content
+end
+
+-- Affiche/masque le panneau de réglages (général + suivi de guilde) par-dessus la vue des personnages
+function AuberdineExporterUI:ToggleSettingsPanel(frame)
+    frame = frame or self.mainFrame
+    if not frame or not frame.mainContent then return end
+    local mc = frame.mainContent
+
+    -- Déjà ouvert : on referme et on rend la vue des personnages
+    if mc.settingsPanel and mc.settingsPanel:IsShown() then
+        mc.settingsPanel:Hide()
+        if mc.characterContentArea then mc.characterContentArea:Show() end
+        return
+    end
+
+    -- Construction paresseuse du panneau (une seule fois)
+    if not mc.settingsPanel then
+        local panel = CreateFrame("Frame", nil, mc)
+        panel:SetAllPoints(mc)
+        panel:SetFrameLevel(mc:GetFrameLevel() + 10)
+        panel.bg = panel:CreateTexture(nil, "BACKGROUND")
+        panel.bg:SetAllPoints()
+        panel.bg:SetColorTexture(0.05, 0.05, 0.05, 0.97)
+        -- Réutilise le constructeur de réglages complet (auto-scan, partage, minimap, guilde)
+        self:CreateSettingsTab(panel)
+        mc.settingsPanel = panel
+    end
+
+    if mc.characterContentArea then mc.characterContentArea:Hide() end
+    mc.settingsPanel:Show()
 end
 
 -- Fonction pour créer seulement la barre de scroll verticale
@@ -788,363 +827,6 @@ function AuberdineExporterUI:ToggleMainFrame()
         self:RefreshCharacterView(frame)
         frame:Show()
     end
-end
-
-function AuberdineExporterUI:CreateMainFrameContent(parent)
-    -- Tab buttons
-    local tabHeight = 25
-    local tabButtons = {}
-    local tabs = {
-        { name = "Overview", func = "CreateOverviewTab" },
-        { name = "Characters", func = "CreateCharactersTab" },
-        { name = "Character Config", func = "CreateCharacterConfigTab" },
-        { name = "Export", func = "CreateExportTab" },
-        { name = "Settings", func = "CreateSettingsTab" }
-    }
-    
-    for i, tab in ipairs(tabs) do
-        local btn = CreateFrame("Button", nil, parent)
-        btn:SetSize(90, tabHeight)
-        btn:SetPoint("TOPLEFT", (i-1) * 90, 0)
-        btn:SetNormalTexture("Interface\\ChatFrame\\ChatFrameTab-BGLeft")
-        btn:SetHighlightTexture("Interface\\ChatFrame\\ChatFrameTab-BGLeft")
-        
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.text:SetAllPoints()
-        btn.text:SetText(tab.name)
-        
-        btn:SetScript("OnClick", function()
-            self:ShowTab(tab.func, tabButtons, i)
-        end)
-        
-        tabButtons[i] = btn
-    end
-    
-    -- Content frame for tabs
-    parent.tabContent = CreateFrame("Frame", nil, parent)
-    parent.tabContent:SetPoint("TOPLEFT", 0, -tabHeight - 5)
-    parent.tabContent:SetPoint("BOTTOMRIGHT", 0, 0)
-    
-    -- Show overview tab by default
-    self:ShowTab("CreateOverviewTab", tabButtons, 1)
-end
-
-function AuberdineExporterUI:ShowTab(tabFunction, tabButtons, activeTab)
-    local content = self.mainFrame.content.tabContent
-    
-    -- Clear current content
-    if content.currentTab then
-        content.currentTab:Hide()
-    end
-    
-    -- Update tab appearance
-    for i, btn in ipairs(tabButtons) do
-        if i == activeTab then
-            btn.text:SetTextColor(1, 1, 1)
-        else
-            btn.text:SetTextColor(0.7, 0.7, 0.7)
-        end
-    end
-    
-    -- Create new tab content
-    if self[tabFunction] then
-        content.currentTab = self[tabFunction](self, content)
-        content.currentTab:Show()
-    end
-end
-
-function AuberdineExporterUI:CreateOverviewTab(parent)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetAllPoints()
-    
-    local stats = GetStatistics and GetStatistics() or {totalCharacters = 0, totalProfessions = 0, totalRecipes = 0, totalQuests = 0}
-    
-    -- Statistics display
-    local yOffset = -10
-    
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 10, yOffset)
-    title:SetText("Recipe Collection Overview")
-    title:SetTextColor(1, 1, 0)
-    yOffset = yOffset - 30
-    
-    -- Data size information
-    if AuberdineExporter and AuberdineExporter.GetDataSizeInfo then
-        local totalChars, totalSize, charSizes = AuberdineExporter:GetDataSizeInfo()
-        
-        local sizeTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        sizeTitle:SetPoint("TOPLEFT", 10, yOffset)
-        sizeTitle:SetText("Data Size Information")
-        sizeTitle:SetTextColor(1, 0.5, 0)
-        yOffset = yOffset - 25
-        
-        local sizeText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        sizeText:SetPoint("TOPLEFT", 10, yOffset)
-        sizeText:SetJustifyH("LEFT")
-        sizeText:SetText(string.format(
-            "Total Characters: %d\nEstimated Data Size: ~%d bytes (~%.1f KB)\n\n" ..
-            "Note: Large datasets may cause export issues.\nUse 'Clear Memory Data' to reduce size.",
-            totalChars,
-            totalSize,
-            totalSize / 1024
-        ))
-        
-        -- Color warning if size is large
-        if totalSize > 50000 then -- >50KB
-            sizeText:SetTextColor(1, 0.3, 0.3) -- Red warning
-        elseif totalSize > 25000 then -- >25KB
-            sizeText:SetTextColor(1, 0.8, 0.3) -- Orange warning
-        else
-            sizeText:SetTextColor(0.8, 0.8, 0.8) -- Normal color
-        end
-        
-        yOffset = yOffset - 80
-    end
-    
-    -- Overall stats
-    local statsText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    statsText:SetPoint("TOPLEFT", 10, yOffset)
-    statsText:SetJustifyH("LEFT")
-    statsText:SetText(string.format(
-        "Total Characters: %d\nTotal Professions: %d\nTotal Recipes: %d\nTotal Quests: %d",
-        stats.totalCharacters,
-        stats.totalProfessions,
-        stats.totalRecipes,
-        stats.totalQuests or 0
-    ))
-    yOffset = yOffset - 85
-    
-    -- Profession breakdown
-    if stats.totalProfessions > 0 then
-        local profTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        profTitle:SetPoint("TOPLEFT", 10, yOffset)
-        profTitle:SetText("Profession Breakdown")
-        profTitle:SetTextColor(0.5, 1, 0.5)
-        yOffset = yOffset - 25
-        
-        for profName, profStats in pairs(stats.professionBreakdown) do
-            local profText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            profText:SetPoint("TOPLEFT", 20, yOffset)
-            profText:SetText(string.format(
-                "%s: %d characters, %d recipes (avg level: %d)",
-                profName,
-                profStats.characters,
-                profStats.totalRecipes,
-                profStats.averageLevel
-            ))
-            yOffset = yOffset - 15
-        end
-    end
-    
-    -- Instructions
-    yOffset = yOffset - 20
-    local instructTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    instructTitle:SetPoint("TOPLEFT", 10, yOffset)
-    instructTitle:SetText("How to Use")
-    instructTitle:SetTextColor(1, 0.8, 0)
-    yOffset = yOffset - 25
-    
-    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    instructions:SetPoint("TOPLEFT", 20, yOffset)
-    instructions:SetPoint("TOPRIGHT", -20, yOffset)
-    instructions:SetJustifyH("LEFT")
-    instructions:SetText(
-        "1. Open your profession windows (Blacksmithing, Tailoring, etc.)\n" ..
-        "2. The addon will automatically scan and save your recipes\n" ..
-        "3. Use the Export tab to generate data for web integration\n" ..
-        "4. Use /auberdine scan to manually scan all professions\n" ..
-        "5. Use /auberdine clear to reduce data size (keeps current character)\n" ..
-        "6. Use /auberdine reset to clear all data\n" ..
-        "7. Click the minimap button for quick access"
-    )
-    
-    return frame
-end
-
-function AuberdineExporterUI:CreateCharactersTab(parent)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetAllPoints()
-    
-    -- Create scroll frame for character list
-    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 10, -10)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
-    
-    local content = CreateFrame("Frame", nil, scrollFrame)
-    scrollFrame:SetScrollChild(content)
-    content:SetWidth(scrollFrame:GetWidth())
-    
-    local allRecipes = AuberdineExporterDB and AuberdineExporterDB.characters or {}
-    local yOffset = 0
-    local rowHeight = 80
-    
-    for charKey, characterData in pairs(allRecipes) do
-        local char = characterData
-        
-        -- Character frame
-        local charFrame = CreateFrame("Frame", nil, content)
-        charFrame:SetPoint("TOPLEFT", 0, yOffset)
-        charFrame:SetPoint("TOPRIGHT", 0, yOffset)
-        charFrame:SetHeight(rowHeight)
-        
-        -- Background
-        charFrame.bg = charFrame:CreateTexture(nil, "BACKGROUND")
-        charFrame.bg:SetAllPoints()
-        charFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.5)
-        
-        -- Character info
-        local charName = charFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        charName:SetPoint("TOPLEFT", 10, -5)
-        charName:SetText(char.name .. " (" .. char.realm .. ")")
-        charName:SetTextColor(1, 1, 1)
-        
-        local charDetails = charFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        charDetails:SetPoint("TOPLEFT", 10, -25)
-        charDetails:SetText(string.format("Level %d %s %s", char.level, char.race, char.class))
-        charDetails:SetTextColor(0.8, 0.8, 0.8)
-        
-        local lastUpdate = charFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        lastUpdate:SetPoint("TOPLEFT", 10, -45)
-        lastUpdate:SetText("Last update: " .. date("%Y-%m-%d %H:%M", char.lastUpdate))
-        lastUpdate:SetTextColor(0.6, 0.6, 0.6)
-        
-        -- Professions info
-        local profText = ""
-        local profCount = 0
-        for profName, profData in pairs(characterData.professions or {}) do
-            profCount = profCount + 1
-            local recipeCount = 0
-            for _ in pairs(profData.recipes or {}) do
-                recipeCount = recipeCount + 1
-            end
-            
-            if profText ~= "" then
-                profText = profText .. ", "
-            end
-            profText = profText .. string.format("%s (%d/%d, %d recipes)", 
-                profName, profData.level or 0, profData.maxLevel or 0, recipeCount)
-        end
-        
-        if profCount > 0 then
-            local professions = charFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            professions:SetPoint("TOPLEFT", 200, -5)
-            professions:SetPoint("TOPRIGHT", -10, -5)
-            professions:SetJustifyH("LEFT")
-            professions:SetText("Professions: " .. profText)
-            professions:SetTextColor(0.5, 1, 0.5)
-        end
-
-        -- Quêtes terminées (v1.5.0)
-        local questCount = 0
-        for _ in pairs(characterData.completedQuests or {}) do
-            questCount = questCount + 1
-        end
-        if questCount > 0 then
-            local quests = charFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            quests:SetPoint("TOPLEFT", 200, -25)
-            quests:SetPoint("TOPRIGHT", -10, -25)
-            quests:SetJustifyH("LEFT")
-            quests:SetText(string.format("Quêtes terminées : %d", questCount))
-            quests:SetTextColor(0.7, 0.85, 1)
-        end
-
-        yOffset = yOffset - rowHeight - 5
-    end
-    
-    content:SetHeight(math.abs(yOffset))
-    
-    return frame
-end
-
-function AuberdineExporterUI:CreateCharacterConfigTab(parent)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetAllPoints()
-    
-    -- Titre
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 10, -10)
-    title:SetText("Gestion des Personnages (v1.3.2b)")
-    title:SetTextColor(1, 1, 0)
-    
-    -- Instructions
-    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    instructions:SetPoint("TOPLEFT", 10, -35)
-    instructions:SetPoint("TOPRIGHT", -10, -35)
-    instructions:SetJustifyH("LEFT")
-    instructions:SetText("Cliquez sur les cartes pour configurer vos personnages. Utilisez les boutons en bas pour les actions.")
-    instructions:SetTextColor(0.8, 0.8, 0.8)
-    
-    -- Schéma de tous les personnages
-    if not AuberdineExporterDB or not AuberdineExporterDB.characters then
-        local noDataText = scrollFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        noDataText:SetPoint("CENTER", scrollFrame, "CENTER", 0, 0)
-        noDataText:SetText("Aucune donnée de personnage disponible")
-        noDataText:SetTextColor(1, 0.5, 0.5)
-        return
-    end
-    
-    -- Générer le schéma des cartes personnages dans scrollFrame
-    AuberdineExporterUI:GenerateCharacterCards(scrollFrame)
-    
-    return frame
-end
-
-function AuberdineExporterUI:CreateExportTab(parent)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetAllPoints()
-    
-    -- Export buttons
-    local yOffset = -10
-    
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 10, yOffset)
-    title:SetText("Export Data")
-    title:SetTextColor(1, 1, 0)
-    yOffset = yOffset - 40
-    
-    -- JSON Export button
-    local jsonBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    jsonBtn:SetPoint("TOPLEFT", 10, yOffset)
-    jsonBtn:SetSize(150, 25)
-    jsonBtn:SetText("Export as JSON")
-    jsonBtn:SetScript("OnClick", function()
-        self:ShowExportFrame("json")
-    end)
-    
-    -- CSV Export button
-    local csvBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    csvBtn:SetPoint("TOPLEFT", 170, yOffset)
-    csvBtn:SetSize(150, 25)
-    csvBtn:SetText("Export as CSV")
-    csvBtn:SetScript("OnClick", function()
-        self:ShowExportFrame("csv")
-    end)
-    
-    -- Web Export button
-    local webBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    webBtn:SetPoint("TOPLEFT", 330, yOffset)
-    webBtn:SetSize(150, 25)
-    webBtn:SetText("Export for Web")
-    webBtn:SetScript("OnClick", function()
-        self:ShowExportFrame("web")
-    end)
-    
-    yOffset = yOffset - 40
-    
-    -- Instructions
-    local instructText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    instructText:SetPoint("TOPLEFT", 10, yOffset)
-    instructText:SetPoint("TOPRIGHT", -10, yOffset)
-    instructText:SetJustifyH("LEFT")
-    instructText:SetText(
-        "Export formats:\n\n" ..
-        "• JSON: Complete data export with all details\n" ..
-        "• CSV: Spreadsheet-compatible format\n" ..
-        "• Web: Optimized format for web integration\n\n" ..
-        "Click any export button to generate and display the data for copying."
-    )
-    
-    return frame
 end
 
 function AuberdineExporterUI:CreateSettingsTab(parent)
