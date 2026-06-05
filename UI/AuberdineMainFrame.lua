@@ -1190,8 +1190,97 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
         end
     end)
     
-    yOffset = yOffset - 50
-    
+    yOffset = yOffset - 40
+
+    -- ===== Section Suivi de guilde =====
+    local GT = AuberdineExporter and AuberdineExporter.GuildTracker
+    local gsettings = GT and GT:GetSettings() or { enabled = true, exportPublicNotes = true, trackNoteChanges = true }
+
+    local guildTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    guildTitle:SetPoint("TOPLEFT", 10, yOffset)
+    guildTitle:SetText("Suivi de guilde")
+    guildTitle:SetTextColor(1, 0.82, 0)
+    yOffset = yOffset - 30
+
+    -- Activer le suivi
+    local guildEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    guildEnableCheck:SetPoint("TOPLEFT", 10, yOffset)
+    guildEnableCheck:SetChecked(gsettings.enabled)
+    guildEnableCheck.text:SetText("Activer le suivi de guilde")
+    guildEnableCheck:SetScript("OnClick", function(self)
+        if GT then GT:GetSettings().enabled = self:GetChecked() and true or false end
+    end)
+    yOffset = yOffset - 28
+
+    -- Exporter les notes publiques
+    local guildNotesCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    guildNotesCheck:SetPoint("TOPLEFT", 10, yOffset)
+    guildNotesCheck:SetChecked(gsettings.exportPublicNotes)
+    guildNotesCheck.text:SetText("Exporter les notes publiques (décoché = export plus léger)")
+    guildNotesCheck:SetScript("OnClick", function(self)
+        if GT then GT:GetSettings().exportPublicNotes = self:GetChecked() and true or false end
+    end)
+    yOffset = yOffset - 28
+
+    -- Journaliser les changements de note
+    local guildNoteLogCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    guildNoteLogCheck:SetPoint("TOPLEFT", 10, yOffset)
+    guildNoteLogCheck:SetChecked(gsettings.trackNoteChanges)
+    guildNoteLogCheck.text:SetText("Journaliser les changements de note (décoché = moins de bruit)")
+    guildNoteLogCheck:SetScript("OnClick", function(self)
+        if GT then GT:GetSettings().trackNoteChanges = self:GetChecked() and true or false end
+    end)
+    yOffset = yOffset - 30
+
+    -- Liste des guildes connues + case "Partager"
+    local guildsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    guildsLabel:SetPoint("TOPLEFT", 14, yOffset)
+    guildsLabel:SetText("Guildes partagées :")
+    guildsLabel:SetTextColor(0.8, 0.8, 0.8)
+    yOffset = yOffset - 22
+
+    local tracked = GT and GT:GetTrackedGuilds() or {}
+    if #tracked == 0 then
+        local none = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        none:SetPoint("TOPLEFT", 26, yOffset)
+        none:SetText("Aucune guilde détectée pour l'instant (connectez-vous en guilde).")
+        yOffset = yOffset - 22
+    else
+        local maxRows = 6
+        for i = 1, math.min(#tracked, maxRows) do
+            local gi = tracked[i]
+            local row = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+            row:SetPoint("TOPLEFT", 20, yOffset)
+            row:SetChecked(gi.share)
+            row.text:SetText(string.format("%s  |cff888888(%d membres · ~%.1f KB)|r",
+                gi.name, gi.memberCount, gi.estBytes / 1024))
+            local key = gi.key
+            row:SetScript("OnClick", function(self)
+                if GT then GT:SetShare(key, self:GetChecked() and true or false) end
+            end)
+            yOffset = yOffset - 24
+        end
+        if #tracked > maxRows then
+            local more = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            more:SetPoint("TOPLEFT", 26, yOffset)
+            more:SetText(string.format("... +%d autres (voir /auberdine guild list)", #tracked - maxRows))
+            yOffset = yOffset - 22
+        end
+    end
+
+    -- Bouton resync complet
+    local resyncBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    resyncBtn:SetPoint("TOPLEFT", 20, yOffset)
+    resyncBtn:SetSize(240, 22)
+    resyncBtn:SetText("Forcer un export complet (resync)")
+    resyncBtn:SetScript("OnClick", function()
+        if GT then
+            GT:RequestFullResync()
+            print("|cff00ff00AuberdineExporter|r |cffffd200[Guilde]|r Prochain export forcé en mode complet.")
+        end
+    end)
+    yOffset = yOffset - 40
+
     -- Reset button
     local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     resetBtn:SetPoint("TOPLEFT", 10, yOffset)

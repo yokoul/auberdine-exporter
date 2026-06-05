@@ -28,21 +28,51 @@ Un re-scan périodique (60 s) capte les changements faits par d'autres.
 
 ### 📦 **Structure stockée**
 ```lua
-AuberdineExporterDB.guild = {
-    name, realm, faction, lastScan,
-    ranks  = { [rankIndex] = rankName },
-    roster = { [guid] = { name, class, level, rankIndex, rankName,
-                          publicNote, online, firstSeen, joinDate } },
-    log    = { { ts, type, target, actor, detail, fromRank, fromNote } },
+AuberdineExporterDB.guilds = {
+    ["NomGuilde-Royaume"] = {
+        name, realm, faction, lastScan, lastExportTs, share = true,
+        ranks  = { [rankIndex] = rankName },
+        roster = { [guid] = { name, class, level, rankIndex, rankName,
+                              publicNote, online, firstSeen, joinDate } },
+        log    = { { ts, type, target, actor, detail, fromRank, fromNote } },
+    },
+}
+AuberdineExporterDB.settings.guild = {
+    enabled = true, exportPublicNotes = true, trackNoteChanges = true,
 }
 ```
 
+### 🗂️ **Multi-guildes + partage sélectif**
+- Stockage **par guilde** (`AuberdineExporterDB.guilds[NomGuilde-Royaume]`) :
+  les alts dans des guildes différentes ne s'écrasent plus.
+- Migration automatique de l'ancien format mono-guilde.
+- Drapeau `share` par guilde : **choix des guildes que l'on exporte**.
+
+### 🪶 **Export économe (delta par défaut)**
+Pour éviter de dépasser la limite d'export (~50 KO) avec un gros roster :
+- **Mode `delta` par défaut** : seuls les événements depuis le dernier export
+  (champ `since`), **plafonnés à 30 jours** ; le roster n'est pas renvoyé.
+- **Mode `full`** : roster complet + journal, au 1er export d'une guilde ou via
+  **resync** manuel.
+- Sérialisation maigre (champs inutiles au serveur retirés) + notes publiques
+  exportées en option.
+- Contrat serveur : `mode=full` → upsert roster + journal ; `mode=delta` →
+  append/dédoublonnage du journal. Voir `docs/GUILD-TRACKING.md`.
+
+### ⚙️ **Options dans l'UI (onglet Réglages → « Suivi de guilde »)**
+- Activer le suivi · Exporter les notes publiques · Journaliser les changements
+  de note · case **Partager** par guilde (avec **taille estimée** du prochain
+  export) · bouton **Forcer un export complet (resync)**.
+
 ### 🆕 **Commandes**
-- `/auberdine guild` — résumé (membres, rangs, taille du journal)
+- `/auberdine guild` — résumé de la guilde courante + taille export estimée
 - `/auberdine guild scan` — forcer un scan du roster
 - `/auberdine guild members` — lister les membres (triés par rang)
 - `/auberdine guild log [n]` — afficher les n derniers événements (défaut 20)
-- `/auberdine guild clear` — réinitialiser les données de guilde
+- `/auberdine guild list` — lister les guildes suivies et leur partage
+- `/auberdine guild share <on|off>` — (dé)activer le partage de la guilde courante
+- `/auberdine guild resync` — forcer un export complet au prochain export
+- `/auberdine guild clear` — réinitialiser les données de la guilde courante
 
 ### 🛡️ **Vie privée**
 - Les **notes officier ne sont jamais collectées ni exportées**. Seules les
@@ -58,8 +88,10 @@ AuberdineExporterDB.guild = {
 ### 📁 **Fichiers modifiés / ajoutés**
 - `GuildTracker.lua` *(nouveau)* : module complet (scan, diff, parsing système,
   journal, export, commandes).
-- `AuberdineExporter.lua` : injection `exportData.guild`, sous-commande
-  `/auberdine guild`, entrées d'aide, bump version fallback.
+- `AuberdineExporter.lua` : injection `exportData.guilds`, sous-commandes
+  `/auberdine guild …`, entrées d'aide, bump version fallback.
+- `UI/AuberdineMainFrame.lua` : section « Suivi de guilde » dans l'onglet
+  Réglages (toggles, partage par guilde + taille estimée, bouton resync).
 - `AuberdineExporter.toc` : version 1.5.0, ajout de `GuildTracker.lua`, note.
 - `create-release.sh` : version 1.5.0, inclusion de `GuildTracker.lua`.
 - `docs/GUILD-TRACKING.md` *(nouveau)* : documentation détaillée.

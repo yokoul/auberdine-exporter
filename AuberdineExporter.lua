@@ -1502,11 +1502,11 @@ function ExportToJSON()
         table.insert(exportData.validation.warnings, "Aucune recette trouvée - ouvrez vos fenêtres de métiers")
     end
 
-    -- NOUVEAU v1.5.0: Données de guilde (roster, entrées/sorties, rangs, notes publiques)
+    -- NOUVEAU v1.5.0: Données de guilde (multi-guildes, export delta économe)
     if AuberdineExporter.GuildTracker and AuberdineExporter.GuildTracker.GetExportData then
         local guildData = AuberdineExporter.GuildTracker:GetExportData()
-        if guildData then
-            exportData.guild = guildData
+        if guildData and guildData.guilds then
+            exportData.guilds = guildData.guilds
         end
     end
 
@@ -2711,8 +2711,21 @@ local function HandleSlashCommand(msg)
             GT:PrintLog(args[3])
         elseif sub == "members" or sub == "membres" then
             GT:PrintMembers()
+        elseif sub == "list" or sub == "guildes" then
+            GT:PrintList()
+        elseif sub == "share" or sub == "partage" then
+            local val = string.lower(args[3] or "")
+            if val == "on" or val == "oui" or val == "enable" then
+                GT:SetCurrentShare(true)
+            elseif val == "off" or val == "non" or val == "disable" then
+                GT:SetCurrentShare(false)
+            else
+                print("|cffff0000AuberdineExporter:|r Usage: /auberdine guild share <on|off>")
+            end
+        elseif sub == "resync" or sub == "full" then
+            GT:ResyncCurrent()
         elseif sub == "clear" or sub == "reset" then
-            GT:ClearData()
+            GT:ClearCurrent()
         else
             GT:PrintSummary()
         end
@@ -2874,11 +2887,14 @@ local function HandleSlashCommand(msg)
         print("  /auberdine stats - Afficher les statistiques dans le chat")
         print("")
         print("|cffff8000=== SUIVI DE GUILDE (v1.5.0) ===|r")
-        print("  /auberdine guild - Résumé de la guilde (membres, rangs, journal)")
+        print("  /auberdine guild - Résumé de la guilde courante (membres, journal, taille export)")
         print("  /auberdine guild scan - Forcer un scan du roster de guilde")
         print("  /auberdine guild members - Lister les membres de la guilde")
         print("  /auberdine guild log [n] - Afficher les n derniers événements (défaut 20)")
-        print("  /auberdine guild clear - Réinitialiser les données de guilde")
+        print("  /auberdine guild list - Lister les guildes suivies et leur partage")
+        print("  /auberdine guild share <on|off> - (Dé)activer le partage/export de la guilde courante")
+        print("  /auberdine guild resync - Forcer un export complet au prochain export")
+        print("  /auberdine guild clear - Réinitialiser les données de la guilde courante")
         print("")
         print("|cffff8000=== GESTION DES PERSONNAGES (v1.3.2) ===|r")
         print("  /auberdine characters - Lister tous les personnages et leur config")
