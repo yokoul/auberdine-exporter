@@ -15,9 +15,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"log"
+
 	"github.com/yokoul/auberdine-exporter/uploader/internal/app"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/discovery"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/tray"
 )
 
 func main() {
@@ -35,6 +38,8 @@ func main() {
 	switch cmd {
 	case "daemon":
 		runDaemon(cfg)
+	case "tray":
+		runTray(cfg)
 	case "status":
 		runStatus(cfg)
 	case "doctor":
@@ -53,9 +58,28 @@ func usage() {
 
 Usage:
   auberdine-uploader [daemon]   Lance la surveillance (défaut)
+  auberdine-uploader tray       Lance la surveillance avec l'icône de barre des tâches
   auberdine-uploader status     Affiche l'état courant
   auberdine-uploader doctor     Diagnostique la détection des fichiers
+
+Le tray nécessite un binaire compilé avec -tags tray.
 `)
+}
+
+func runTray(cfg config.Config) {
+	logger := log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
+	if !tray.Available {
+		logger.Print("tray indisponible : recompilez avec « go build -tags tray ./cmd/auberdine-uploader »")
+		os.Exit(1)
+	}
+	a, err := app.New(cfg, nil, logger)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "démarrage: %v\n", err)
+		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	tray.Run(ctx, a, cfg, logger)
 }
 
 func runDaemon(cfg config.Config) {

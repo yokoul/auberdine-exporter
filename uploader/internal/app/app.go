@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,6 +29,10 @@ type App struct {
 	logger   *log.Logger
 
 	paused atomic.Bool
+
+	// Identité Discord, modifiable à chaud (login/logout via le tray).
+	mu      sync.RWMutex
+	discord config.DiscordIdentity
 }
 
 // New construit le démon à partir de la configuration. Le client d'upload peut
@@ -41,16 +46,53 @@ func New(cfg config.Config, up upload.Uploader, logger *log.Logger) (*App, error
 	if err != nil {
 		return nil, err
 	}
-	if up == nil {
-		up = upload.NewHTTP(cfg.Endpoint,
-			func() string { return cfg.Discord.AccessToken },
-			func() string { return cfg.Discord.UserID },
-		)
-	}
 	if logger == nil {
 		logger = log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
 	}
-	return &App{cfg: cfg, paths: paths, state: st, uploader: up, logger: logger}, nil
+	a := &App{cfg: cfg, paths: paths, state: st, logger: logger, discord: cfg.Discord}
+	if up == nil {
+		up = upload.NewHTTP(cfg.Endpoint, a.DiscordToken, a.DiscordID)
+	}
+	a.uploader = up
+	return a, nil
+}
+
+// DiscordToken renvoie le jeton d'accès Discord courant (thread-safe).
+func (a *App) DiscordToken() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.discord.AccessToken
+}
+
+// DiscordID renvoie l'identifiant Discord courant (thread-safe).
+func (a *App) DiscordID() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.discord.UserID
+}
+
+// DiscordUsername renvoie le pseudo Discord courant (thread-safe).
+func (a *App) DiscordUsername() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.discord.Username
+}
+
+// LoggedIn indique si une identité Discord exploitable est présente.
+func (a *App) LoggedIn() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.discord.AccessToken != "" || a.discord.UserID != ""
+}
+
+// SetDiscord met à jour l'identité Discord (login/logout) et la persiste.
+func (a *App) SetDiscord(id config.DiscordIdentity) error {
+	a.mu.Lock()
+	a.discord = id
+	a.cfg.Discord = id
+	cfg := a.cfg
+	a.mu.Unlock()
+	return cfg.Save()
 }
 
 // SetPaused met en pause (ou reprend) la transmission. La surveillance continue

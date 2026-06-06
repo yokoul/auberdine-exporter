@@ -32,6 +32,11 @@ type Config struct {
 
 	// Discord contient l'identité obtenue via OAuth (rempli après login).
 	Discord DiscordIdentity `json:"discord"`
+
+	// DiscordAuthorizeURL est la page de liaison du compte Discord (même
+	// mécanique que sur auberdine.eu). Ouverte par le tray lors du login tant
+	// que le flux OAuth complet n'est pas implémenté.
+	DiscordAuthorizeURL string `json:"discordAuthorizeUrl,omitempty"`
 }
 
 // DiscordIdentity stocke le minimum pour s'authentifier auprès d'auberdine.eu.

@@ -23,7 +23,7 @@ WoWCombatLog ──┘                              ▲
 
 ## Build
 
-Aucune dépendance externe (stdlib uniquement) — build hors-ligne.
+Le démon par défaut n'a **aucune dépendance externe** (stdlib uniquement) :
 
 ```bash
 cd uploader
@@ -31,13 +31,25 @@ go build -o auberdine-uploader ./cmd/auberdine-uploader
 go test ./...
 ```
 
+Le **tray** (icône de barre des tâches) est optionnel, derrière le build tag
+`tray` — il tire alors `fyne.io/systray` (D-Bus/StatusNotifierItem sur Linux,
+natif sur macOS/Windows) :
+
+```bash
+go build -tags tray -o auberdine-uploader ./cmd/auberdine-uploader
+```
+
 ## Commandes
 
 ```bash
-auberdine-uploader            # lance le démon (surveillance)
+auberdine-uploader            # lance le démon (surveillance, headless)
+auberdine-uploader tray       # surveillance + icône de barre des tâches (binaire -tags tray)
 auberdine-uploader status     # état : chemins, config, identité Discord
 auberdine-uploader doctor     # diagnostique la détection des fichiers
 ```
+
+Menu du tray : état actif/pause · **Pause / Reprendre** · **Login / Logout
+Discord** · **Quitter**.
 
 ## Configuration
 
@@ -68,6 +80,8 @@ séparément dans le répertoire de cache utilisateur.
 | `internal/discovery` | détection multi-OS des chemins WoW |
 | `internal/upload` | interface + client HTTP (gzip, retry, auth) |
 | `internal/app` | démon : surveillance, dédup, pipeline d'envoi |
+| `internal/auth` | identité Discord : logout + ouverture du login (OAuth différé) |
+| `internal/tray` | icône de barre des tâches (build tag `tray`) + stub par défaut |
 | `cmd/auberdine-uploader` | binaire et sous-commandes |
 
 ## État d'avancement
@@ -83,12 +97,13 @@ Implémenté (P0) :
 - [x] Association de l'identifiant Discord à la publication (`X-Auberdine-Discord`)
 - [x] Client HTTP gzip + retry à backoff exponentiel
 - [x] État technique persistant (dédup, offsets)
-- [x] Commandes `daemon` / `status` / `doctor`
+- [x] Commandes `daemon` / `status` / `doctor` / `tray`
+- [x] **Tray** (build tag) : état, pause/reprendre, login/logout Discord, quitter
 
 À venir :
 
-- [ ] **Tray** (icône barre des tâches) : quit / pause / login Discord / logout Discord
-- [ ] **Discord OAuth** (flux navigateur + redirection loopback) — déférable
+- [ ] **Discord OAuth** (flux navigateur + redirection loopback) — déférable ;
+      pour l'instant logout fonctionnel + ouverture de la page de liaison
 - [ ] **Contrat d'API d'ingestion** auberdine.eu (endpoints + auth) — dépendance amont
 - [ ] Empaquetage Homebrew / Scoop / systemd-user
 ```
