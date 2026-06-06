@@ -21,6 +21,7 @@ import (
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/connect"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/discovery"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/install"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/tray"
 )
 
@@ -47,6 +48,10 @@ func main() {
 		runStatus(cfg)
 	case "doctor":
 		runDoctor(cfg)
+	case "install":
+		runInstall()
+	case "uninstall":
+		runUninstall()
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -65,8 +70,11 @@ Usage:
   auberdine-uploader connect    Connecte l'uploader à auberdine.eu (ouvre le navigateur)
   auberdine-uploader status     Affiche l'état courant
   auberdine-uploader doctor     Diagnostique la détection des fichiers
+  auberdine-uploader install    Installe le service utilisateur (démarre à l'ouverture de session)
+  auberdine-uploader uninstall  Retire le service utilisateur (conserve config et clé)
 
-Le tray nécessite un binaire compilé avec -tags tray.
+Le tray nécessite un binaire compilé avec -tags tray ; install lance le tray
+si le binaire le permet, le démon sinon.
 `)
 }
 
@@ -163,6 +171,34 @@ func runDoctor(cfg config.Config) {
 		fmt.Printf("✓ Log de combat  : %s\n", paths.CombatLog)
 	} else {
 		fmt.Printf("• Log de combat  : %s (absent — activé seulement en jeu)\n", paths.CombatLog)
+	}
+	if st := install.Status(); st.Installed {
+		fmt.Printf("✓ Service        : %s (%s)\n", st.UnitPath, st.Detail)
+	} else {
+		fmt.Printf("• Service        : non installé (« auberdine-uploader install »)\n")
+	}
+}
+
+// runInstall pose le service utilisateur. Le mode suit le binaire : tray si
+// compilé avec -tags tray (icône de barre des tâches), démon discret sinon.
+func runInstall() {
+	logger := log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
+	mode := "daemon"
+	if tray.Available {
+		mode = "tray"
+	}
+	if err := install.Install(mode, logger); err != nil {
+		fmt.Fprintf(os.Stderr, "installation: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Service installé — l'uploader démarre maintenant et à chaque ouverture de session.")
+}
+
+func runUninstall() {
+	logger := log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
+	if err := install.Uninstall(logger); err != nil {
+		fmt.Fprintf(os.Stderr, "désinstallation: %v\n", err)
+		os.Exit(1)
 	}
 }
 

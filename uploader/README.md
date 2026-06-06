@@ -46,12 +46,33 @@ auberdine-uploader            # lance le démon (surveillance, headless)
 auberdine-uploader tray       # surveillance + icône de barre des tâches (binaire -tags tray)
 auberdine-uploader connect    # lie l'uploader à votre compte auberdine.eu (ouvre le navigateur)
 auberdine-uploader status     # état : chemins, config, clé API
-auberdine-uploader doctor     # diagnostique la détection des fichiers
+auberdine-uploader doctor     # diagnostique la détection des fichiers + l'état du service
+auberdine-uploader install    # installe le service utilisateur (démarre à l'ouverture de session)
+auberdine-uploader uninstall  # retire le service (conserve config et clé)
 ```
 
 Menu du tray : état/connexion · **Se connecter à auberdine.eu** · **Pause /
 Reprendre** · **Envoyer les exports** · **Envoyer les logs de donjon** ·
 **Quitter**.
+
+## Installation en service utilisateur
+
+`install` pose l'uploader en service de session — démarré à l'ouverture de
+session, relancé en cas d'arrêt anormal, **sans aucune élévation de
+privilèges**. Le binaire courant est d'abord copié vers un emplacement stable
+du profil (installer depuis un dossier de téléchargement est donc sûr), puis :
+
+| OS | Mécanisme | Emplacement |
+|----|-----------|-------------|
+| macOS | LaunchAgent (launchd, session Aqua) | `~/Library/LaunchAgents/eu.auberdine.uploader.plist`, journal dans `~/Library/Logs/auberdine-uploader.log` |
+| Linux | unité systemd-user | `~/.config/systemd/user/auberdine-uploader.service`, journal via `journalctl --user -u auberdine-uploader` |
+| Windows | clé Run par utilisateur (HKCU) | binaire sous `%LOCALAPPDATA%\auberdine-uploader\` |
+
+Le mode suit le binaire : un binaire compilé `-tags tray` est installé avec son
+icône de barre des tâches, un binaire standard tourne en démon discret.
+`uninstall` retire le service et le binaire copié mais **conserve la
+configuration et la clé** — réinstaller plus tard ne demande pas de refaire
+`connect`. État visible dans `doctor`.
 
 ## Configuration
 
