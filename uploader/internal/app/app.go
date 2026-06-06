@@ -278,15 +278,26 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 			// au log le plus récent couvrant la fenêtre.
 			segment, err = readSegment(candidates[0], r.ByteStart, r.ByteEnd)
 		} else {
-			// Premier candidat (du plus récent au plus ancien) qui produit
-			// un segment non vide — en dual-box chaque client écrit son
-			// propre fichier, n'importe quel point de vue du groupe couvre
-			// le run (le log contient tous les membres).
+			// Parmi les candidats, on retient le segment LE PLUS RICHE :
+			// en dual-box chaque client écrit son propre fichier, et les
+			// points de vue divergent (le combatlog ne porte que ce qui est
+			// à portée — un perso resté loin du boss produit un segment
+			// appauvri, cas réel observé au Monastère écarlate). Le choix
+			// par volume est déterministe pour une même machine, donc la
+			// dédup sha256 côté serveur continue d'absorber les manifestes
+			// jumeaux des comptes multiples.
 			for _, p := range candidates {
-				segment, err = segmentByTime(p, r.StartedAt, r.EndedAt, year)
-				if err == nil && len(segment) > 0 {
-					break
+				seg, e := segmentByTime(p, r.StartedAt, r.EndedAt, year)
+				if e != nil {
+					err = e
+					continue
 				}
+				if len(seg) > len(segment) {
+					segment, err = seg, nil
+				}
+			}
+			if len(segment) > 0 {
+				err = nil
 			}
 		}
 		if err != nil {
