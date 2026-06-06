@@ -30,3 +30,8 @@ build/
 
 # Development context files
 SESSION_CONTEXT.md
+
+# Go uploader build artifacts
+uploader/auberdine-uploader
+uploader/auberdine-uploader.exe
+uploader/auberdine-uploader-tray
