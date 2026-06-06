@@ -35,7 +35,9 @@ func Run(ctx context.Context, a *app.App, _ config.Config, logger *log.Logger) {
 
 	onReady := func() {
 		systray.SetIcon(iconData)
-		systray.SetTitle("Auberdine")
+		// Pas de SetTitle : sur macOS le titre s'affiche À CÔTÉ de l'icône
+		// dans la barre des menus et mange de la place — l'icône et le
+		// tooltip suffisent à identifier l'uploader.
 		systray.SetTooltip("Auberdine Uploader")
 
 		mStatus := systray.AddMenuItem("Démarrage…", "")

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // agentLabel identifie le LaunchAgent auprès de launchd.
@@ -85,10 +86,21 @@ func Install(mode string, logger *log.Logger) error {
 	}
 
 	// Décharge une éventuelle instance précédente (erreur ignorée : absente à
-	// la première installation), puis charge la nouvelle. bootstrap démarre le
-	// service tout de suite grâce à RunAtLoad.
+	// la première installation). bootout est asynchrone : enchaîner bootstrap
+	// immédiatement échoue en « Input/output error » (exit 5) tant que le job
+	// n'a pas fini de se décharger — on attend sa disparition effective.
 	uid := os.Getuid()
-	_ = exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", uid, agentLabel)).Run()
+	target := fmt.Sprintf("gui/%d/%s", uid, agentLabel)
+	_ = exec.Command("launchctl", "bootout", target).Run()
+	for i := 0; i < 20; i++ {
+		if exec.Command("launchctl", "print", target).Run() != nil {
+			break // job déchargé
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	// Charge la nouvelle définition ; bootstrap démarre le service tout de
+	// suite grâce à RunAtLoad.
 	out, err := exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", uid), pl).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("install: launchctl bootstrap: %v — %s", err, strings.TrimSpace(string(out)))
