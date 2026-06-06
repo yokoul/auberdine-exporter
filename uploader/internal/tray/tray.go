@@ -12,7 +12,6 @@ package tray
 
 import (
 	"context"
-	_ "embed"
 	"log"
 
 	"fyne.io/systray"
@@ -22,8 +21,7 @@ import (
 	"github.com/yokoul/auberdine-exporter/uploader/internal/connect"
 )
 
-//go:embed icon.png
-var iconData []byte
+// iconData : fourni par icon_windows.go (ICO) ou icon_other.go (PNG).
 
 // Available indique si le support du tray est compilé dans ce binaire.
 const Available = true
