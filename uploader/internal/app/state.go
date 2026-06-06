@@ -16,20 +16,27 @@ type State struct {
 
 	// ExportHashes : dernier hash transmis par fichier SavedVariables.
 	ExportHashes map[string]string `json:"exportHashes"`
-	// CombatOffsets : position de lecture déjà traitée par fichier de log.
-	CombatOffsets map[string]int64 `json:"combatOffsets"`
 	// SentRuns : identifiants de runs de donjon déjà transmis (dédup).
 	SentRuns map[string]bool `json:"sentRuns"`
 
 	path string
 }
 
+// StateDirEnv permet de surcharger le répertoire d'état (utile en tests et en
+// ops : os.UserCacheDir() n'honore pas XDG_CACHE_HOME sur macOS/Windows).
+const StateDirEnv = "AUBERDINE_UPLOADER_STATE_DIR"
+
 func statePath() (string, error) {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
+	dir := os.Getenv(StateDirEnv)
+	if dir == "" {
+		var err error
+		dir, err = os.UserCacheDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(dir, "auberdine-uploader")
 	}
-	return filepath.Join(dir, "auberdine-uploader", "state.json"), nil
+	return filepath.Join(dir, "state.json"), nil
 }
 
 // LoadState lit l'état depuis le disque (valeurs vides si absent).
@@ -39,10 +46,9 @@ func LoadState() (*State, error) {
 		return nil, err
 	}
 	s := &State{
-		ExportHashes:  map[string]string{},
-		CombatOffsets: map[string]int64{},
-		SentRuns:      map[string]bool{},
-		path:          p,
+		ExportHashes: map[string]string{},
+		SentRuns:     map[string]bool{},
+		path:         p,
 	}
 	data, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
@@ -56,9 +62,6 @@ func LoadState() (*State, error) {
 	}
 	if s.ExportHashes == nil {
 		s.ExportHashes = map[string]string{}
-	}
-	if s.CombatOffsets == nil {
-		s.CombatOffsets = map[string]int64{}
 	}
 	if s.SentRuns == nil {
 		s.SentRuns = map[string]bool{}
@@ -88,19 +91,6 @@ func (s *State) setExportHash(file, hash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ExportHashes[file] = hash
-	return s.save()
-}
-
-func (s *State) combatOffset(file string) int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.CombatOffsets[file]
-}
-
-func (s *State) setCombatOffset(file string, off int64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.CombatOffsets[file] = off
 	return s.save()
 }
 

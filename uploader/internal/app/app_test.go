@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,32 +12,36 @@ import (
 
 // fakeUploader capture les appels pour les assertions.
 type fakeUploader struct {
-	exports []capturedExport
-	runs    []upload.DungeonMeta
+	exports []string
+	runs    []capturedRun
 	err     error
 }
 
-type capturedExport struct {
-	accountKey string
-	payload    []byte
+type capturedRun struct {
+	meta upload.CombatMeta
+	raw  []byte
 }
 
-func (f *fakeUploader) SendExport(_ context.Context, accountKey string, payload []byte) error {
-	if f.err != nil {
-		return f.err
-	}
-	cp := make([]byte, len(payload))
-	copy(cp, payload)
-	f.exports = append(f.exports, capturedExport{accountKey, cp})
-	return nil
+func (f *fakeUploader) Status(context.Context) (upload.StatusResponse, error) {
+	return upload.StatusResponse{Success: true}, nil
 }
 
-func (f *fakeUploader) SendDungeonLog(_ context.Context, meta upload.DungeonMeta, _ []byte) error {
+func (f *fakeUploader) SendExport(_ context.Context, jsonData string) (upload.ExportResult, error) {
 	if f.err != nil {
-		return f.err
+		return upload.ExportResult{}, f.err
 	}
-	f.runs = append(f.runs, meta)
-	return nil
+	f.exports = append(f.exports, jsonData)
+	return upload.ExportResult{Processed: 1}, nil
+}
+
+func (f *fakeUploader) SendDungeonLog(_ context.Context, meta upload.CombatMeta, raw []byte) (upload.CombatResult, error) {
+	if f.err != nil {
+		return upload.CombatResult{}, f.err
+	}
+	cp := make([]byte, len(raw))
+	copy(cp, raw)
+	f.runs = append(f.runs, capturedRun{meta, cp})
+	return upload.CombatResult{UploadID: 1, Status: "stored"}, nil
 }
 
 // setupWoW crée une arborescence WoW minimale avec une SavedVariable.
@@ -57,10 +60,12 @@ func setupWoW(t *testing.T, sv string) string {
 
 func newTestApp(t *testing.T, root string, up *fakeUploader) *App {
 	t.Helper()
-	// État isolé dans un cache temporaire.
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	// État isolé dans un répertoire temporaire (cross-platform : UserCacheDir
+	// n'honore pas XDG_CACHE_HOME sur macOS/Windows).
+	t.Setenv(StateDirEnv, t.TempDir())
 	cfg := config.Default()
 	cfg.WoWPath = root
+	cfg.APIKey = "ak_test"
 	a, err := New(cfg, up, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -72,7 +77,11 @@ func TestProcessExportSendsOnceThenDedups(t *testing.T) {
 	sv := `AuberdineExporterDB = {
 		["version"] = "1.6.4",
 		["accountKey"] = "acc-xyz",
-		["characters"] = { ["Carnalis-Auberdine"] = { ["name"] = "Carnalis", ["level"] = 60 } },
+		["uploaderExport"] = {
+			["schema"] = 1,
+			["generatedAt"] = 1733500000,
+			["payload"] = "SIGNED-EXPORT-A",
+		},
 	}`
 	root := setupWoW(t, sv)
 	up := &fakeUploader{}
@@ -87,16 +96,8 @@ func TestProcessExportSendsOnceThenDedups(t *testing.T) {
 	if len(up.exports) != 1 {
 		t.Fatalf("attendu 1 export, obtenu %d", len(up.exports))
 	}
-	if up.exports[0].accountKey != "acc-xyz" {
-		t.Errorf("accountKey = %q", up.exports[0].accountKey)
-	}
-	// Le payload doit être du JSON valide contenant les personnages.
-	var decoded map[string]any
-	if err := json.Unmarshal(up.exports[0].payload, &decoded); err != nil {
-		t.Fatalf("payload non JSON: %v", err)
-	}
-	if _, ok := decoded["characters"]; !ok {
-		t.Errorf("payload sans characters: %v", decoded)
+	if up.exports[0] != "SIGNED-EXPORT-A" {
+		t.Errorf("payload transmis = %q, attendu l'export signé brut", up.exports[0])
 	}
 
 	// Deuxième passage sans changement : dédup, aucun nouvel envoi.
@@ -108,8 +109,21 @@ func TestProcessExportSendsOnceThenDedups(t *testing.T) {
 	}
 }
 
-func TestProcessExportResendsOnChange(t *testing.T) {
+func TestProcessExportSkipsWhenNoSignedExport(t *testing.T) {
+	// SavedVariable présente mais sans uploaderExport (logout pas encore survenu).
 	root := setupWoW(t, `AuberdineExporterDB = { ["accountKey"] = "a", ["characters"] = { ["X"] = { ["level"] = 1 } } }`)
+	up := &fakeUploader{}
+	a := newTestApp(t, root, up)
+	if err := a.processExport(context.Background(), a.Paths().SavedVars[0]); err != nil {
+		t.Fatal(err)
+	}
+	if len(up.exports) != 0 {
+		t.Fatalf("aucun export attendu sans uploaderExport, obtenu %d", len(up.exports))
+	}
+}
+
+func TestProcessExportResendsOnChange(t *testing.T) {
+	root := setupWoW(t, `AuberdineExporterDB = { ["uploaderExport"] = { ["payload"] = "SIGNED-A" } }`)
 	up := &fakeUploader{}
 	a := newTestApp(t, root, up)
 	svPath := a.Paths().SavedVars[0]
@@ -118,8 +132,8 @@ func TestProcessExportResendsOnChange(t *testing.T) {
 	if err := a.processExport(ctx, svPath); err != nil {
 		t.Fatal(err)
 	}
-	// Modifie le contenu.
-	newSV := `AuberdineExporterDB = { ["accountKey"] = "a", ["characters"] = { ["X"] = { ["level"] = 2 } } }`
+	// Modifie l'export signé.
+	newSV := `AuberdineExporterDB = { ["uploaderExport"] = { ["payload"] = "SIGNED-B" } }`
 	if err := os.WriteFile(svPath, []byte(newSV), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +155,7 @@ func TestDungeonManifestDrivesUpload(t *testing.T) {
 				{
 					["id"] = "run-1",
 					["instance"] = "Deadmines",
+					["instanceId"] = 36,
 					["character"] = "Carnalis-Auberdine",
 					["startedAt"] = 1733500000,
 					["endedAt"] = 1733503600,
@@ -169,8 +184,15 @@ func TestDungeonManifestDrivesUpload(t *testing.T) {
 	if len(up.runs) != 1 {
 		t.Fatalf("attendu 1 run transmis, obtenu %d", len(up.runs))
 	}
-	if up.runs[0].RunID != "run-1" || up.runs[0].Instance != "Deadmines" {
-		t.Errorf("meta inattendue: %+v", up.runs[0])
+	m := up.runs[0].meta
+	if m.InstanceName != "Deadmines" || m.MapID != 36 {
+		t.Errorf("instance inattendue: %+v", m)
+	}
+	if m.Uploader != "Carnalis" || m.Realm != "auberdine" {
+		t.Errorf("uploader/realm inattendus: %+v", m)
+	}
+	if string(up.runs[0].raw) != "HELLO WORLD" {
+		t.Errorf("segment = %q, attendu les 11 premiers octets", up.runs[0].raw)
 	}
 
 	// Deuxième passage : run déjà transmis → dédup.

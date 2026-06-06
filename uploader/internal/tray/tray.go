@@ -1,8 +1,8 @@
 //go:build tray
 
-// Package tray fournit l'icône de barre des tâches (quit / pause / login /
-// logout Discord). Il n'est compilé qu'avec le build tag `tray` afin que le
-// démon par défaut reste sans dépendance externe :
+// Package tray fournit l'icône de barre des tâches (état, pause, bascules de
+// consentement, quitter). Il n'est compilé qu'avec le build tag `tray` afin que
+// le démon par défaut reste sans dépendance externe :
 //
 //	go build -tags tray ./cmd/auberdine-uploader
 //
@@ -18,7 +18,6 @@ import (
 	"fyne.io/systray"
 
 	"github.com/yokoul/auberdine-exporter/uploader/internal/app"
-	"github.com/yokoul/auberdine-exporter/uploader/internal/auth"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
 )
 
@@ -30,7 +29,7 @@ const Available = true
 
 // Run affiche le tray et lance le démon en arrière-plan. L'appel bloque jusqu'à
 // la sortie (clic sur « Quitter » ou annulation du contexte).
-func Run(ctx context.Context, a *app.App, cfg config.Config, logger *log.Logger) {
+func Run(ctx context.Context, a *app.App, _ config.Config, logger *log.Logger) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	onReady := func() {
@@ -41,12 +40,20 @@ func Run(ctx context.Context, a *app.App, cfg config.Config, logger *log.Logger)
 		mStatus := systray.AddMenuItem("Démarrage…", "")
 		mStatus.Disable()
 		systray.AddSeparator()
-		mPause := systray.AddMenuItemCheckbox("Pause", "Suspend la transmission", a.Paused())
+		mPause := systray.AddMenuItemCheckbox("Pause", "Suspend toute transmission", a.Paused())
 		systray.AddSeparator()
-		mDiscord := systray.AddMenuItem("", "")
+		mExports := systray.AddMenuItemCheckbox("Envoyer les exports", "Transmettre les exports de l'addon", a.UploadExports())
+		mDungeons := systray.AddMenuItemCheckbox("Envoyer les logs de donjon", "Transmettre les logs de combat de donjon", a.UploadDungeonLogs())
 		systray.AddSeparator()
 		mQuit := systray.AddMenuItem("Quitter", "Arrête l'uploader")
 
+		setChecked := func(item *systray.MenuItem, on bool) {
+			if on {
+				item.Check()
+			} else {
+				item.Uncheck()
+			}
+		}
 		refresh := func() {
 			if a.Paused() {
 				mStatus.SetTitle("⏸ En pause")
@@ -55,15 +62,8 @@ func Run(ctx context.Context, a *app.App, cfg config.Config, logger *log.Logger)
 				mStatus.SetTitle("▶ Actif")
 				mPause.Uncheck()
 			}
-			if a.LoggedIn() {
-				name := a.DiscordUsername()
-				if name == "" {
-					name = "compte lié"
-				}
-				mDiscord.SetTitle("Se déconnecter de Discord (" + name + ")")
-			} else {
-				mDiscord.SetTitle("Se connecter à Discord")
-			}
+			setChecked(mExports, a.UploadExports())
+			setChecked(mDungeons, a.UploadDungeonLogs())
 		}
 		refresh()
 
@@ -83,15 +83,14 @@ func Run(ctx context.Context, a *app.App, cfg config.Config, logger *log.Logger)
 				case <-mPause.ClickedCh:
 					a.SetPaused(!a.Paused())
 					refresh()
-				case <-mDiscord.ClickedCh:
-					if a.LoggedIn() {
-						if err := auth.Logout(a); err != nil {
-							logger.Printf("logout : %v", err)
-						}
-					} else {
-						if err := auth.Login(a, cfg.DiscordAuthorizeURL); err != nil {
-							logger.Printf("login : %v", err)
-						}
+				case <-mExports.ClickedCh:
+					if err := a.SetUploadExports(!a.UploadExports()); err != nil {
+						logger.Printf("réglage exports : %v", err)
+					}
+					refresh()
+				case <-mDungeons.ClickedCh:
+					if err := a.SetUploadDungeonLogs(!a.UploadDungeonLogs()); err != nil {
+						logger.Printf("réglage logs donjon : %v", err)
 					}
 					refresh()
 				case <-mQuit.ClickedCh:

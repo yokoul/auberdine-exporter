@@ -3,7 +3,7 @@
 // La configuration vit dans le répertoire de config utilisateur standard
 // (XDG_CONFIG_HOME sur Linux/macOS, %AppData% sur Windows) et reste minimale :
 // chemins WoW (auto-détectés mais surchargeables), endpoint d'ingestion et
-// jeton d'identité Discord.
+// clé API auberdine.eu (scope ingest:upload).
 package config
 
 import (
@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 )
 
+// DefaultEndpoint est la base de l'API d'ingestion auberdine.eu.
+const DefaultEndpoint = "https://auberdine.eu"
+
 // Config est l'état configurable de l'uploader.
 type Config struct {
 	// WoWPath pointe vers le dossier de version (ex. ".../_classic_era_").
@@ -20,41 +23,29 @@ type Config struct {
 	WoWPath string `json:"wowPath,omitempty"`
 
 	// Endpoint est la base de l'API d'ingestion auberdine.eu.
-	// À remplir lorsque le contrat serveur est figé.
 	Endpoint string `json:"endpoint"`
 
-	// Upload active/désactive chaque flux (consentement granulaire).
-	UploadExports    bool `json:"uploadExports"`
+	// APIKey est la clé d'ingestion (préfixe ak_, scope ingest:upload). Elle
+	// porte le discord_id côté serveur (auto-claim des personnages). Envoyée en
+	// Authorization: Bearer. À créer via /admin/apiaccess (ou scripts/api-key.js).
+	APIKey string `json:"apiKey"`
+
+	// Upload active/désactive chaque flux (consentement granulaire, modifiable
+	// à chaud depuis le tray).
+	UploadExports     bool `json:"uploadExports"`
 	UploadDungeonLogs bool `json:"uploadDungeonLogs"`
 
 	// PollInterval est l'intervalle de scan des fichiers, en secondes.
 	PollIntervalSeconds int `json:"pollIntervalSeconds"`
-
-	// Discord contient l'identité obtenue via OAuth (rempli après login).
-	Discord DiscordIdentity `json:"discord"`
-
-	// DiscordAuthorizeURL est la page de liaison du compte Discord (même
-	// mécanique que sur auberdine.eu). Ouverte par le tray lors du login tant
-	// que le flux OAuth complet n'est pas implémenté.
-	DiscordAuthorizeURL string `json:"discordAuthorizeUrl,omitempty"`
 }
 
-// DiscordIdentity stocke le minimum pour s'authentifier auprès d'auberdine.eu.
-type DiscordIdentity struct {
-	UserID       string `json:"userId,omitempty"`
-	Username     string `json:"username,omitempty"`
-	AccessToken  string `json:"accessToken,omitempty"`
-	RefreshToken string `json:"refreshToken,omitempty"`
-	ExpiresAt    int64  `json:"expiresAt,omitempty"`
-}
-
-// LoggedIn indique si une identité Discord exploitable est présente.
-func (c *Config) LoggedIn() bool { return c.Discord.AccessToken != "" }
+// HasAPIKey indique si une clé d'ingestion est configurée.
+func (c *Config) HasAPIKey() bool { return c.APIKey != "" }
 
 // Default renvoie une configuration aux valeurs par défaut raisonnables.
 func Default() Config {
 	return Config{
-		Endpoint:            "",
+		Endpoint:            DefaultEndpoint,
 		UploadExports:       true,
 		UploadDungeonLogs:   true,
 		PollIntervalSeconds: 5,
@@ -87,6 +78,9 @@ func Load() (Config, error) {
 	cfg := Default()
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, err
+	}
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = DefaultEndpoint
 	}
 	return cfg, nil
 }

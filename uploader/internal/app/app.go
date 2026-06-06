@@ -6,10 +6,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,7 +23,6 @@ import (
 
 // App est le démon de l'uploader.
 type App struct {
-	cfg      config.Config
 	paths    discovery.Paths
 	state    *State
 	uploader upload.Uploader
@@ -30,9 +30,12 @@ type App struct {
 
 	paused atomic.Bool
 
-	// Identité Discord, modifiable à chaud (login/logout via le tray).
-	mu      sync.RWMutex
-	discord config.DiscordIdentity
+	// mu protège la configuration mutable (consentement, clé API) et sa
+	// persistance. Le tray peut la modifier à chaud pendant que tick() la lit.
+	mu  sync.Mutex
+	cfg config.Config
+
+	apiKeyWarned bool
 }
 
 // New construit le démon à partir de la configuration. Le client d'upload peut
@@ -49,47 +52,67 @@ func New(cfg config.Config, up upload.Uploader, logger *log.Logger) (*App, error
 	if logger == nil {
 		logger = log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
 	}
-	a := &App{cfg: cfg, paths: paths, state: st, logger: logger, discord: cfg.Discord}
+	a := &App{paths: paths, state: st, logger: logger, cfg: cfg}
 	if up == nil {
-		up = upload.NewHTTP(cfg.Endpoint, a.DiscordToken, a.DiscordID)
+		up = upload.NewHTTP(cfg.Endpoint, a.APIKey)
 	}
 	a.uploader = up
 	return a, nil
 }
 
-// DiscordToken renvoie le jeton d'accès Discord courant (thread-safe).
-func (a *App) DiscordToken() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.discord.AccessToken
-}
-
-// DiscordID renvoie l'identifiant Discord courant (thread-safe).
-func (a *App) DiscordID() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.discord.UserID
-}
-
-// DiscordUsername renvoie le pseudo Discord courant (thread-safe).
-func (a *App) DiscordUsername() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.discord.Username
-}
-
-// LoggedIn indique si une identité Discord exploitable est présente.
-func (a *App) LoggedIn() bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.discord.AccessToken != "" || a.discord.UserID != ""
-}
-
-// SetDiscord met à jour l'identité Discord (login/logout) et la persiste.
-func (a *App) SetDiscord(id config.DiscordIdentity) error {
+// APIKey renvoie la clé d'ingestion courante (thread-safe).
+func (a *App) APIKey() string {
 	a.mu.Lock()
-	a.discord = id
-	a.cfg.Discord = id
+	defer a.mu.Unlock()
+	return a.cfg.APIKey
+}
+
+// HasAPIKey indique si une clé d'ingestion est configurée.
+func (a *App) HasAPIKey() bool { return a.APIKey() != "" }
+
+// Endpoint renvoie la base de l'API d'ingestion (thread-safe).
+func (a *App) Endpoint() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.Endpoint
+}
+
+// SetAPIKey enregistre la clé d'ingestion obtenue par la connexion et persiste.
+func (a *App) SetAPIKey(key string) error {
+	a.mu.Lock()
+	a.cfg.APIKey = key
+	cfg := a.cfg
+	a.mu.Unlock()
+	return cfg.Save()
+}
+
+// UploadExports indique si la transmission des exports est active.
+func (a *App) UploadExports() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.UploadExports
+}
+
+// UploadDungeonLogs indique si la transmission des logs de donjon est active.
+func (a *App) UploadDungeonLogs() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.UploadDungeonLogs
+}
+
+// SetUploadExports active/désactive la transmission des exports et persiste.
+func (a *App) SetUploadExports(v bool) error {
+	a.mu.Lock()
+	a.cfg.UploadExports = v
+	cfg := a.cfg
+	a.mu.Unlock()
+	return cfg.Save()
+}
+
+// SetUploadDungeonLogs active/désactive la transmission des logs de donjon et persiste.
+func (a *App) SetUploadDungeonLogs(v bool) error {
+	a.mu.Lock()
+	a.cfg.UploadDungeonLogs = v
 	cfg := a.cfg
 	a.mu.Unlock()
 	return cfg.Save()
@@ -107,11 +130,14 @@ func (a *App) Paths() discovery.Paths { return a.paths }
 
 // Run lance la boucle de surveillance jusqu'à annulation du contexte.
 func (a *App) Run(ctx context.Context) error {
+	a.mu.Lock()
 	interval := time.Duration(a.cfg.PollIntervalSeconds) * time.Second
+	a.mu.Unlock()
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
 	a.logger.Printf("démarrage : %d SavedVariables, log=%s", len(a.paths.SavedVars), a.paths.CombatLog)
+	a.handshake(ctx)
 
 	// Premier passage immédiat, puis à intervalle régulier.
 	a.tick(ctx)
@@ -127,27 +153,54 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
+// handshake valide la clé API au démarrage et signale les anomalies de config
+// (clé absente/invalide, compte Discord non lié). Non bloquant.
+func (a *App) handshake(ctx context.Context) {
+	if a.APIKey() == "" {
+		a.logger.Print("⚠ clé API non configurée : aucun envoi tant que apiKey est vide (voir config.json)")
+		return
+	}
+	st, err := a.uploader.Status(ctx)
+	if err != nil {
+		a.logger.Printf("⚠ handshake /ingest/status : %v", err)
+		return
+	}
+	if !st.Partner.LinkedDiscord {
+		a.logger.Print("⚠ clé API sans Discord lié : les imports passeront mais aucun personnage ne sera auto-claim")
+	}
+	a.logger.Printf("connecté à l'API d'ingestion (contrat v%d, clé « %s »)", st.ContractVersion, st.Partner.Label)
+}
+
 // tick effectue un cycle de surveillance.
 func (a *App) tick(ctx context.Context) {
 	if a.paused.Load() {
 		return
 	}
-	if a.cfg.UploadExports {
+	if a.APIKey() == "" {
+		if !a.apiKeyWarned {
+			a.logger.Print("clé API absente : cycle ignoré (configurez apiKey)")
+			a.apiKeyWarned = true
+		}
+		return
+	}
+	if a.UploadExports() {
 		for _, sv := range a.paths.SavedVars {
 			if err := a.processExport(ctx, sv); err != nil {
 				a.logger.Printf("export %s : %v", sv, err)
 			}
 		}
 	}
-	if a.cfg.UploadDungeonLogs {
+	if a.UploadDungeonLogs() {
 		if err := a.processDungeonLogs(ctx); err != nil {
 			a.logger.Printf("logs donjon : %v", err)
 		}
 	}
 }
 
-// processExport lit une SavedVariable, en extrait la base de l'addon et la
-// transmet si son contenu a changé depuis le dernier envoi.
+// processExport lit une SavedVariable, en extrait l'export signé publié par
+// l'addon (uploaderExport.payload) et le transmet s'il a changé depuis le
+// dernier envoi. L'uploader ne re-signe ni ne reconstruit l'export : il relaie
+// tel quel ce que l'addon a produit (seul détenteur de la clé de signature).
 func (a *App) processExport(ctx context.Context, svPath string) error {
 	raw, err := os.ReadFile(svPath)
 	if err != nil {
@@ -159,34 +212,42 @@ func (a *App) processExport(ctx context.Context, svPath string) error {
 	}
 	db, ok := parsed["AuberdineExporterDB"].(map[string]any)
 	if !ok {
-		// Fichier présent mais sans données de l'addon : rien à faire.
+		return nil // fichier présent mais sans données de l'addon
+	}
+	exp, ok := db["uploaderExport"].(map[string]any)
+	if !ok {
+		return nil // l'addon n'a pas encore publié d'export signé (logout requis)
+	}
+	payload, _ := exp["payload"].(string)
+	if payload == "" {
 		return nil
 	}
 
-	payload, err := json.Marshal(db)
-	if err != nil {
-		return err
-	}
-	sum := sha256.Sum256(payload)
+	sum := sha256.Sum256([]byte(payload))
 	hash := hex.EncodeToString(sum[:])
 	if hash == a.state.lastExportHash(svPath) {
 		return nil // inchangé : dédup
 	}
 
-	accountKey, _ := db["accountKey"].(string)
-	if err := a.uploader.SendExport(ctx, accountKey, payload); err != nil {
-		return err
+	res, err := a.uploader.SendExport(ctx, payload)
+	if err != nil {
+		if upload.IsDefinitive(err) {
+			// Payload refusé (ex. signature invalide) : inutile de le renvoyer
+			// à l'identique à chaque cycle. On mémorise le hash pour ne réessayer
+			// qu'au prochain export régénéré par l'addon.
+			a.logger.Printf("export %s rejeté (définitif), ignoré jusqu'au prochain export : %v", svPath, err)
+			return a.state.setExportHash(svPath, hash)
+		}
+		return err // transitoire : on réessaiera au prochain cycle
 	}
-	a.logger.Printf("export transmis (%d octets) depuis %s", len(payload), svPath)
+	a.logger.Printf("export transmis depuis %s (%d personnage(s))", svPath, res.Processed)
 	return a.state.setExportHash(svPath, hash)
 }
 
-// processDungeonLogs lit, de façon incrémentale, le manifeste de runs publié
-// par l'addon dans la SavedVariable et transmet pour chaque nouveau run le
-// segment brut correspondant du log de combat.
-//
-// Tant que l'addon ne publie pas de manifeste (uploaderManifest), aucun segment
-// n'est transmis : repli sûr, on n'envoie jamais un log à l'aveugle.
+// processDungeonLogs consomme le manifeste de runs publié par l'addon et
+// transmet, pour chaque run complet non encore envoyé, le segment correspondant
+// du log de combat. L'addon ne fournit que des timestamps ; le démon mappe la
+// fenêtre vers une plage de lignes du log.
 func (a *App) processDungeonLogs(ctx context.Context) error {
 	runs := a.collectManifestRuns()
 	if len(runs) == 0 {
@@ -197,14 +258,12 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 		if r.Status != "complete" || a.state.runSent(r.ID) {
 			continue
 		}
-		// Bornes en octets explicites (override de test/debug) sinon
-		// segmentation par fenêtre temporelle — l'addon ne fournit que des
-		// timestamps, pas d'offsets.
 		var (
 			segment []byte
 			err     error
 		)
 		if r.ByteEnd > r.ByteStart {
+			// Bornes octets explicites (override de test/debug).
 			segment, err = readSegment(a.paths.CombatLog, r.ByteStart, r.ByteEnd)
 		} else {
 			segment, err = segmentByTime(a.paths.CombatLog, r.StartedAt, r.EndedAt, year)
@@ -214,24 +273,35 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 			continue
 		}
 		if len(segment) == 0 {
-			// Aucune ligne dans la fenêtre : on n'envoie pas un segment vide,
-			// mais on ne re-scanne pas indéfiniment.
 			a.logger.Printf("run %s : segment vide, ignoré", r.ID)
 			a.state.markRunSent(r.ID)
 			continue
 		}
-		meta := upload.DungeonMeta{
-			RunID:     r.ID,
-			Instance:  r.Instance,
-			Character: r.Character,
-			StartedAt: r.StartedAt,
-			EndedAt:   r.EndedAt,
+		name, realm := splitCharacter(r.Character)
+		meta := upload.CombatMeta{
+			Realm:        realm,
+			Uploader:     name,
+			InstanceName: r.Instance,
+			MapID:        r.InstanceID,
+			StartedAt:    r.StartedAt,
+			EndedAt:      r.EndedAt,
 		}
-		if err := a.uploader.SendDungeonLog(ctx, meta, segment); err != nil {
+		res, err := a.uploader.SendDungeonLog(ctx, meta, segment)
+		if err != nil {
+			if upload.IsDefinitive(err) {
+				// Segment refusé (ex. format invalide) : ne pas retenter à l'identique.
+				a.logger.Printf("run %s rejeté (définitif), ignoré : %v", r.ID, err)
+				a.state.markRunSent(r.ID)
+				continue
+			}
 			a.logger.Printf("run %s : envoi : %v", r.ID, err)
-			continue
+			continue // transitoire
 		}
-		a.logger.Printf("run donjon transmis : %s (%s, %d octets)", r.ID, r.Instance, len(segment))
+		if res.Duplicate {
+			a.logger.Printf("run donjon déjà connu côté serveur : %s (%s)", r.ID, r.Instance)
+		} else {
+			a.logger.Printf("run donjon transmis : %s (%s, %d octets, upload #%d)", r.ID, r.Instance, len(segment), res.UploadID)
+		}
 		if err := a.state.markRunSent(r.ID); err != nil {
 			return err
 		}
@@ -239,7 +309,22 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 	return nil
 }
 
-// readSegment lit [start, end) du log de combat. Si end <= 0, lit jusqu'à la fin.
+// splitCharacter sépare une clé "Nom-Royaume" en (nom, royaume slug minuscule).
+// Le royaume vide retombe sur "auberdine" (défaut serveur).
+func splitCharacter(key string) (name, realm string) {
+	if i := strings.LastIndex(key, "-"); i >= 0 {
+		name = key[:i]
+		realm = strings.ToLower(key[i+1:])
+	} else {
+		name = key
+	}
+	if realm == "" {
+		realm = "auberdine"
+	}
+	return name, realm
+}
+
+// readSegment lit [start, end) du log de combat. Si end <= start, lit jusqu'à la fin.
 func readSegment(path string, start, end int64) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -253,21 +338,11 @@ func readSegment(path string, start, end int64) ([]byte, error) {
 	}
 	if end > start {
 		buf := make([]byte, end-start)
-		n, err := f.Read(buf)
-		if err != nil && n == 0 {
+		n, err := io.ReadFull(f, buf)
+		if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
 			return nil, err
 		}
 		return buf[:n], nil
 	}
-	// Pas de borne de fin : lit le reste.
-	rest := make([]byte, 0, 64*1024)
-	tmp := make([]byte, 32*1024)
-	for {
-		n, err := f.Read(tmp)
-		rest = append(rest, tmp[:n]...)
-		if err != nil {
-			break
-		}
-	}
-	return rest, nil
+	return io.ReadAll(f)
 }

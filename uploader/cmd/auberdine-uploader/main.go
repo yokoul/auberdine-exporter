@@ -103,10 +103,10 @@ func runStatus(cfg config.Config) {
 	fmt.Printf("Endpoint      : %s\n", orNone(cfg.Endpoint))
 	fmt.Printf("Exports       : %v\n", cfg.UploadExports)
 	fmt.Printf("Logs donjon   : %v\n", cfg.UploadDungeonLogs)
-	if cfg.LoggedIn() {
-		fmt.Printf("Discord       : connecté (%s)\n", cfg.Discord.Username)
+	if cfg.HasAPIKey() {
+		fmt.Printf("Clé API       : configurée (%s)\n", maskKey(cfg.APIKey))
 	} else {
-		fmt.Printf("Discord       : non connecté\n")
+		fmt.Printf("Clé API       : absente (renseignez apiKey)\n")
 	}
 	paths, ok := discovery.Detect(cfg.WoWPath)
 	if !ok {
@@ -144,4 +144,12 @@ func orNone(s string) string {
 		return "(non configuré)"
 	}
 	return s
+}
+
+// maskKey masque une clé API pour l'affichage (ne révèle que le préfixe).
+func maskKey(k string) string {
+	if len(k) <= 6 {
+		return "ak_…"
+	}
+	return k[:6] + "…"
 }

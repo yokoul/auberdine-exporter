@@ -1,92 +1,206 @@
-// Package upload transmet les données à auberdine.eu.
+// Package upload transmet les données à auberdine.eu via l'API d'ingestion
+// (contrat /ingest v1, cf. docs ingest-api.md côté serveur).
 //
 // Le transport réel est masqué derrière l'interface Uploader afin que le reste
-// du démon ne dépende pas du contrat HTTP précis (encore à figer côté serveur).
-// L'implémentation HTTP applique gzip, l'authentification Discord et un retry à
-// backoff exponentiel.
+// du démon ne dépende pas du contrat HTTP précis. L'implémentation HTTP
+// s'authentifie par clé API (Authorization: Bearer ak_…), applique un retry à
+// backoff exponentiel sur les erreurs transitoires (réseau, 429, 5xx) et
+// distingue les erreurs définitives (4xx) qu'il ne faut pas retenter.
 package upload
 
 import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 )
 
+// ClientVersion identifie le client dans les métadonnées d'upload.
+const ClientVersion = "1.0.0"
+
+const clientName = "auberdine-uploader"
+
 // Uploader transmet exports et segments de log de donjon.
 type Uploader interface {
-	// SendExport transmet la structure de données de l'addon (JSON déjà sérialisé).
-	SendExport(ctx context.Context, accountKey string, payload []byte) error
-	// SendDungeonLog transmet un segment brut de log de combat pour un run.
-	SendDungeonLog(ctx context.Context, meta DungeonMeta, raw []byte) error
+	// Status réalise le handshake /ingest/status (valide la clé, expose le lien Discord).
+	Status(ctx context.Context) (StatusResponse, error)
+	// SendExport transmet l'export signé de l'addon (chaîne JSON produite par l'addon).
+	SendExport(ctx context.Context, jsonData string) (ExportResult, error)
+	// SendDungeonLog transmet un segment de log de combat pour un run de donjon.
+	SendDungeonLog(ctx context.Context, meta CombatMeta, raw []byte) (CombatResult, error)
 }
 
-// DungeonMeta décrit le run associé à un segment de log transmis brut.
-type DungeonMeta struct {
-	RunID     string `json:"runId"`
-	Instance  string `json:"instance"`
-	Character string `json:"character"`
-	StartedAt int64  `json:"startedAt"`
-	EndedAt   int64  `json:"endedAt"`
+// StatusResponse est la réponse de GET /ingest/status.
+type StatusResponse struct {
+	Success         bool `json:"success"`
+	ContractVersion int  `json:"contractVersion"`
+	ExportAvailable bool `json:"exportAvailable"`
+	Partner         struct {
+		Label         string   `json:"label"`
+		Scopes        []string `json:"scopes"`
+		LinkedDiscord bool     `json:"linkedDiscord"`
+		RateLimit     int      `json:"rateLimit"`
+	} `json:"partner"`
+}
+
+// ExportResult résume la réponse de POST /ingest/export.
+type ExportResult struct {
+	Processed int `json:"processed"`
+}
+
+// CombatMeta décrit le run associé à un segment de log. Le sha256 et la taille
+// brute sont calculés par l'uploader à partir du segment lui-même.
+type CombatMeta struct {
+	Realm        string
+	Uploader     string // nom du personnage qui loggait
+	InstanceName string
+	MapID        int64
+	StartedAt    int64
+	EndedAt      int64
+}
+
+// CombatResult résume la réponse de POST /ingest/combatlog.
+type CombatResult struct {
+	UploadID  int64  `json:"uploadId"`
+	Duplicate bool   `json:"duplicate"`
+	Status    string `json:"status"`
+}
+
+// HTTPError porte le code HTTP et l'enveloppe d'erreur serveur. Les 4xx (hors
+// 429) sont définitifs : re-tenter à l'identique est inutile.
+type HTTPError struct {
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("upload: statut %d (%s): %s", e.StatusCode, e.Code, e.Message)
+	}
+	return fmt.Sprintf("upload: statut %d", e.StatusCode)
+}
+
+// Definitive indique une erreur qu'il ne faut pas retenter telle quelle.
+func (e *HTTPError) Definitive() bool {
+	return e.StatusCode >= 400 && e.StatusCode < 500 && e.StatusCode != http.StatusTooManyRequests
+}
+
+// IsDefinitive teste si err est une erreur HTTP définitive (4xx hors 429).
+func IsDefinitive(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && he.Definitive()
 }
 
 // HTTPClient est l'implémentation réseau.
 type HTTPClient struct {
 	BaseURL string
-	// Token est le jeton d'accès Discord (Bearer).
-	Token func() string
-	// DiscordID fournit l'identifiant Discord à associer à la publication
-	// (recoupement compte Discord ↔ personnages WoW côté serveur).
-	DiscordID func() string
-	hc        *http.Client
+	// APIKey fournit la clé d'ingestion courante (peut changer à chaud).
+	APIKey func() string
+	hc     *http.Client
 }
 
-// NewHTTP construit un client HTTP vers baseURL. tokenFn et discordIDFn sont
-// appelées à chaque requête pour récupérer les valeurs courantes (elles peuvent
-// changer après un login). discordIDFn peut être nil.
-func NewHTTP(baseURL string, tokenFn, discordIDFn func() string) *HTTPClient {
+// NewHTTP construit un client HTTP vers baseURL. apiKeyFn est appelée à chaque
+// requête pour récupérer la clé courante.
+func NewHTTP(baseURL string, apiKeyFn func() string) *HTTPClient {
 	return &HTTPClient{
-		BaseURL:   baseURL,
-		Token:     tokenFn,
-		DiscordID: discordIDFn,
-		hc:        &http.Client{Timeout: 60 * time.Second},
+		BaseURL: baseURL,
+		APIKey:  apiKeyFn,
+		hc:      &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
-// SendExport poste le JSON de l'addon vers /ingest/export.
-func (c *HTTPClient) SendExport(ctx context.Context, accountKey string, payload []byte) error {
-	return c.post(ctx, "/ingest/export", map[string]string{
-		"X-Auberdine-Account": accountKey,
-	}, payload)
-}
-
-// SendDungeonLog poste un segment brut vers /ingest/combatlog.
-func (c *HTTPClient) SendDungeonLog(ctx context.Context, meta DungeonMeta, raw []byte) error {
-	return c.post(ctx, "/ingest/combatlog", map[string]string{
-		"X-Auberdine-Run":       meta.RunID,
-		"X-Auberdine-Instance":  meta.Instance,
-		"X-Auberdine-Character": meta.Character,
-	}, raw)
-}
-
-// post envoie un corps gzippé avec retry à backoff exponentiel.
-func (c *HTTPClient) post(ctx context.Context, path string, headers map[string]string, body []byte) error {
-	if c.BaseURL == "" {
-		return fmt.Errorf("upload: endpoint non configuré")
+// Status réalise le handshake /ingest/status.
+func (c *HTTPClient) Status(ctx context.Context) (StatusResponse, error) {
+	var out StatusResponse
+	body, err := c.do(ctx, http.MethodGet, "/ingest/status", nil)
+	if err != nil {
+		return out, err
 	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return out, fmt.Errorf("upload: réponse status illisible: %w", err)
+	}
+	return out, nil
+}
 
+// SendExport poste l'export signé vers /ingest/export.
+func (c *HTTPClient) SendExport(ctx context.Context, jsonData string) (ExportResult, error) {
+	var out ExportResult
+	payload, err := json.Marshal(map[string]string{"jsonData": jsonData})
+	if err != nil {
+		return out, err
+	}
+	body, err := c.do(ctx, http.MethodPost, "/ingest/export", payload)
+	if err != nil {
+		return out, err
+	}
+	_ = json.Unmarshal(body, &out)
+	return out, nil
+}
+
+// SendDungeonLog gzippe + encode le segment et le poste vers /ingest/combatlog.
+func (c *HTTPClient) SendDungeonLog(ctx context.Context, meta CombatMeta, raw []byte) (CombatResult, error) {
+	var out CombatResult
+
+	sum := sha256.Sum256(raw)
 	var gz bytes.Buffer
 	w := gzip.NewWriter(&gz)
-	if _, err := w.Write(body); err != nil {
-		return err
+	if _, err := w.Write(raw); err != nil {
+		return out, err
 	}
 	if err := w.Close(); err != nil {
-		return err
+		return out, err
 	}
-	compressed := gz.Bytes()
+
+	body := map[string]any{
+		"meta": map[string]any{
+			"sha256":        hex.EncodeToString(sum[:]),
+			"sizeRaw":       len(raw),
+			"client":        clientName,
+			"clientVersion": ClientVersion,
+			"realm":         meta.Realm,
+			"uploader":      meta.Uploader,
+			"instance":      map[string]any{"name": meta.InstanceName, "mapId": meta.MapID},
+			"startedAt":     meta.StartedAt,
+			"endedAt":       meta.EndedAt,
+			"logFormat":     "wow-combatlog-1.15",
+		},
+		"logGzipBase64": base64.StdEncoding.EncodeToString(gz.Bytes()),
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return out, err
+	}
+	respBody, err := c.do(ctx, http.MethodPost, "/ingest/combatlog", payload)
+	if err != nil {
+		return out, err
+	}
+	_ = json.Unmarshal(respBody, &out)
+	return out, nil
+}
+
+// do exécute une requête avec retry à backoff exponentiel sur les erreurs
+// transitoires (réseau, 429, 5xx). Les 4xx (hors 429) sont renvoyés comme
+// *HTTPError définitif sans retry. body nil => requête sans corps (GET).
+func (c *HTTPClient) do(ctx context.Context, method, path string, body []byte) ([]byte, error) {
+	if c.BaseURL == "" {
+		return nil, fmt.Errorf("upload: endpoint non configuré")
+	}
+	key := ""
+	if c.APIKey != nil {
+		key = c.APIKey()
+	}
+	if key == "" {
+		return nil, fmt.Errorf("upload: clé API non configurée")
+	}
 
 	var lastErr error
 	backoff := time.Second
@@ -94,51 +208,57 @@ func (c *HTTPClient) post(ctx context.Context, path string, headers map[string]s
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil, ctx.Err()
 			case <-time.After(backoff):
 			}
 			backoff *= 2
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(compressed))
+		var reqBody io.Reader
+		if body != nil {
+			reqBody = bytes.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Content-Encoding", "gzip")
-		if c.Token != nil {
-			if tok := c.Token(); tok != "" {
-				req.Header.Set("Authorization", "Bearer "+tok)
-			}
-		}
-		if c.DiscordID != nil {
-			if id := c.DiscordID(); id != "" {
-				req.Header.Set("X-Auberdine-Discord", id)
-			}
-		}
-		for k, v := range headers {
-			req.Header.Set(k, v)
+		req.Header.Set("Authorization", "Bearer "+key)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
 		}
 
 		resp, err := c.hc.Do(req)
 		if err != nil {
 			lastErr = err
-			continue
+			continue // erreur réseau : transitoire
 		}
-		io.Copy(io.Discard, resp.Body)
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
 
 		switch {
 		case resp.StatusCode >= 200 && resp.StatusCode < 300:
-			return nil
-		case resp.StatusCode == 429 || resp.StatusCode >= 500:
-			// Erreur transitoire : on retente.
-			lastErr = fmt.Errorf("upload: statut %d", resp.StatusCode)
-			continue
+			return data, nil
+		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
+			lastErr = &HTTPError{StatusCode: resp.StatusCode}
+			continue // transitoire : on retente
 		default:
-			// Erreur définitive (4xx hors 429) : inutile de retenter.
-			return fmt.Errorf("upload: statut %d (définitif)", resp.StatusCode)
+			// 4xx définitif : inutile de retenter.
+			return nil, parseHTTPError(resp.StatusCode, data)
 		}
 	}
-	return fmt.Errorf("upload: échec après plusieurs tentatives: %w", lastErr)
+	return nil, fmt.Errorf("upload: échec après plusieurs tentatives: %w", lastErr)
+}
+
+// parseHTTPError décode l'enveloppe d'erreur { error, message } si présente.
+func parseHTTPError(status int, body []byte) *HTTPError {
+	e := &HTTPError{StatusCode: status}
+	var env struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &env) == nil {
+		e.Code = env.Error
+		e.Message = env.Message
+	}
+	return e
 }

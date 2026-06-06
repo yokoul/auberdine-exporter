@@ -2815,6 +2815,8 @@ frame:RegisterEvent("BANKFRAME_OPENED")
 frame:RegisterEvent("BANKFRAME_CLOSED")
 frame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
 frame:RegisterEvent("PLAYERBANKBAGSLOTS_CHANGED")
+-- Persistance de l'export signé pour l'uploader local (voir docs/UPLOADER-ARCHITECTURE.md §7)
+frame:RegisterEvent("PLAYER_LOGOUT")
 
 -- Structure par défaut de la base (factorisée : utilisée à ADDON_LOADED et PLAYER_LOGIN)
 local function GetDefaultDB()
@@ -2835,8 +2837,27 @@ local function GetDefaultDB()
     }
 end
 
+-- Persiste l'export signé dans la SavedVariable pour que l'uploader local le
+-- relaie tel quel vers /ingest/export (il ne sait pas signer lui-même). Appelé
+-- au logout/reload, juste avant l'écriture de la SV sur disque.
+local function PersistUploaderExport()
+    if not IsValidRealm() then return end
+    if type(ExportToJSON) ~= "function" then return end
+    local ok, payload = pcall(ExportToJSON)
+    if not ok or type(payload) ~= "string" or payload == "" then return end
+    AuberdineExporterDB = AuberdineExporterDB or {}
+    AuberdineExporterDB.uploaderExport = {
+        schema = 1,
+        payload = payload,
+        generatedAt = time(),
+    }
+end
+
 frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
+    if event == "PLAYER_LOGOUT" then
+        PersistUploaderExport()
+        return
+    elseif event == "ADDON_LOADED" then
         local addonName = ...
         if addonName == "AuberdineExporter" then
             if not AuberdineExporterDB then
