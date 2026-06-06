@@ -169,12 +169,12 @@ func TestDungeonManifestDrivesUpload(t *testing.T) {
 	up := &fakeUploader{}
 	a := newTestApp(t, root, up)
 
-	// Écrit un log de combat factice à l'emplacement attendu.
-	logDir := filepath.Dir(a.Paths().CombatLog)
+	// Écrit un log de combat factice (nom legacy, toujours détecté).
+	logDir := a.Paths().LogsDir
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(a.Paths().CombatLog, []byte("HELLO WORLD extra"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(logDir, "WoWCombatLog.txt"), []byte("HELLO WORLD extra"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

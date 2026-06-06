@@ -167,10 +167,17 @@ func runDoctor(cfg config.Config) {
 			fmt.Printf("✓ SavedVariables : %s\n", sv)
 		}
 	}
-	if _, err := os.Stat(paths.CombatLog); err == nil {
-		fmt.Printf("✓ Log de combat  : %s\n", paths.CombatLog)
+	logs := discovery.ListCombatLogs(paths.LogsDir)
+	if len(logs) == 0 {
+		fmt.Printf("• Logs de combat : aucun dans %s (créés en jeu, un par session de logging)\n", paths.LogsDir)
 	} else {
-		fmt.Printf("• Log de combat  : %s (absent — activé seulement en jeu)\n", paths.CombatLog)
+		for i, l := range logs {
+			if i >= 3 {
+				fmt.Printf("✓ Logs de combat : … et %d autre(s)\n", len(logs)-3)
+				break
+			}
+			fmt.Printf("✓ Log de combat  : %s\n", l.Path)
+		}
 	}
 	if st := install.Status(); st.Installed {
 		fmt.Printf("✓ Service        : %s (%s)\n", st.UnitPath, st.Detail)

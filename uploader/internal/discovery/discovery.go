@@ -7,23 +7,88 @@ package discovery
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
+	"time"
 )
 
 // SavedVarFile est le nom du fichier SavedVariables de l'addon.
 const SavedVarFile = "AuberdineExporter.lua"
 
-// CombatLogFile est le nom du log de combat écrit par le client WoW.
-const CombatLogFile = "WoWCombatLog.txt"
-
 // Paths regroupe les chemins résolus pour une installation WoW.
 type Paths struct {
 	// VersionDir est le dossier de version (ex. ".../_classic_era_").
 	VersionDir string
-	// CombatLog est le chemin attendu du log de combat.
-	CombatLog string
+	// LogsDir est le dossier des logs du client (Logs/). Les fichiers de
+	// combat eux-mêmes sont listés à la demande par ListCombatLogs : le
+	// client moderne (1.15.8+) crée UN fichier horodaté PAR session de
+	// logging (WoWCombatLog-MMJJAA_HHMMSS.txt) — la liste change donc en
+	// cours de vie du démon, on ne peut pas la figer au démarrage.
+	LogsDir string
 	// SavedVars liste tous les AuberdineExporter.lua trouvés (multi-compte).
 	SavedVars []string
+}
+
+// CombatLogInfo décrit un fichier de log de combat présent sur disque.
+type CombatLogInfo struct {
+	Path string
+	// SessionStart est l'horodatage du nom de fichier (début de la session
+	// de logging) — zéro pour le legacy WoWCombatLog.txt sans horodatage.
+	SessionStart time.Time
+	// ModTime borne la fin de la plage couverte par le fichier.
+	ModTime time.Time
+}
+
+// combatLogNameRe matche le legacy "WoWCombatLog.txt" et les fichiers par
+// session "WoWCombatLog-MMJJAA_HHMMSS.txt" (client 1.15.8+).
+var combatLogNameRe = regexp.MustCompile(`^WoWCombatLog(?:-(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2}))?\.txt$`)
+
+// ListCombatLogs liste les logs de combat du dossier Logs/, du plus récent au
+// plus ancien (SessionStart décroissant, legacy sans horodatage en dernier).
+func ListCombatLogs(logsDir string) []CombatLogInfo {
+	entries, err := os.ReadDir(logsDir)
+	if err != nil {
+		return nil
+	}
+	var out []CombatLogInfo
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		m := combatLogNameRe.FindStringSubmatch(e.Name())
+		if m == nil {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		cl := CombatLogInfo{
+			Path:    filepath.Join(logsDir, e.Name()),
+			ModTime: info.ModTime(),
+		}
+		if m[1] != "" {
+			// MMJJAA_HHMMSS, heure locale (cohérente avec le time() Lua de
+			// l'addon : même machine que le client).
+			cl.SessionStart = time.Date(
+				2000+atoi2(m[3]), time.Month(atoi2(m[1])), atoi2(m[2]),
+				atoi2(m[4]), atoi2(m[5]), atoi2(m[6]), 0, time.Local)
+		}
+		out = append(out, cl)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].SessionStart.After(out[j].SessionStart)
+	})
+	return out
+}
+
+func atoi2(s string) int {
+	n := 0
+	for _, c := range s {
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // candidateVersionDirs renvoie les emplacements probables du dossier
@@ -81,7 +146,7 @@ func Detect(override string) (Paths, bool) {
 func resolve(versionDir string) Paths {
 	return Paths{
 		VersionDir: versionDir,
-		CombatLog:  filepath.Join(versionDir, "Logs", CombatLogFile),
+		LogsDir:    filepath.Join(versionDir, "Logs"),
 		SavedVars:  findSavedVars(versionDir),
 	}
 }

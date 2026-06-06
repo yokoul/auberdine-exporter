@@ -7,12 +7,34 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yokoul/auberdine-exporter/uploader/internal/discovery"
 )
 
 // segMargin élargit légèrement la fenêtre temporelle pour ne pas tronquer les
 // premières/dernières lignes d'un run (l'addon borne sur des events de zone,
 // le log sur l'horodatage de chaque ligne).
 const segMargin = 5 * time.Second
+
+// combatLogCandidates filtre les logs dont la plage [SessionStart, ModTime]
+// intersecte la fenêtre [startedAt, endedAt] du run (marge comprise). L'ordre
+// d'entrée (du plus récent au plus ancien, cf. ListCombatLogs) est conservé.
+// Le legacy WoWCombatLog.txt (SessionStart zéro) n'est borné que par ModTime.
+func combatLogCandidates(logs []discovery.CombatLogInfo, startedAt, endedAt int64) []string {
+	lo := time.Unix(startedAt-int64(segMargin.Seconds()), 0)
+	hi := time.Unix(endedAt+int64(segMargin.Seconds()), 0)
+	var out []string
+	for _, l := range logs {
+		if !l.SessionStart.IsZero() && l.SessionStart.After(hi) {
+			continue // session ouverte après la fin du run
+		}
+		if l.ModTime.Before(lo) {
+			continue // fichier clos avant le début du run
+		}
+		out = append(out, l.Path)
+	}
+	return out
+}
 
 // segmentByTime extrait, du log de combat, le bloc brut des lignes dont
 // l'horodatage tombe dans [startedAt, endedAt] (avec marge). Le contenu est

@@ -136,7 +136,8 @@ func (a *App) Run(ctx context.Context) error {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
-	a.logger.Printf("démarrage : %d SavedVariables, log=%s", len(a.paths.SavedVars), a.paths.CombatLog)
+	a.logger.Printf("démarrage : %d SavedVariables, logs=%s (%d log(s) de combat présents)",
+		len(a.paths.SavedVars), a.paths.LogsDir, len(discovery.ListCombatLogs(a.paths.LogsDir)))
 	a.handshake(ctx)
 
 	// Premier passage immédiat, puis à intervalle régulier.
@@ -258,15 +259,35 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 		if r.Status != "complete" || a.state.runSent(r.ID) {
 			continue
 		}
+		// Le client 1.15.8+ crée un log horodaté PAR session de logging :
+		// on liste à chaque passage et on ne retient que les fichiers dont
+		// la plage [SessionStart, ModTime] intersecte la fenêtre du run.
+		candidates := combatLogCandidates(
+			discovery.ListCombatLogs(a.paths.LogsDir), r.StartedAt, r.EndedAt)
+		if len(candidates) == 0 {
+			a.logger.Printf("run %s : aucun log de combat ne couvre la fenêtre, ignoré", r.ID)
+			a.state.markRunSent(r.ID)
+			continue
+		}
 		var (
 			segment []byte
 			err     error
 		)
 		if r.ByteEnd > r.ByteStart {
-			// Bornes octets explicites (override de test/debug).
-			segment, err = readSegment(a.paths.CombatLog, r.ByteStart, r.ByteEnd)
+			// Bornes octets explicites (override de test/debug) : appliquées
+			// au log le plus récent couvrant la fenêtre.
+			segment, err = readSegment(candidates[0], r.ByteStart, r.ByteEnd)
 		} else {
-			segment, err = segmentByTime(a.paths.CombatLog, r.StartedAt, r.EndedAt, year)
+			// Premier candidat (du plus récent au plus ancien) qui produit
+			// un segment non vide — en dual-box chaque client écrit son
+			// propre fichier, n'importe quel point de vue du groupe couvre
+			// le run (le log contient tous les membres).
+			for _, p := range candidates {
+				segment, err = segmentByTime(p, r.StartedAt, r.EndedAt, year)
+				if err == nil && len(segment) > 0 {
+					break
+				}
+			}
 		}
 		if err != nil {
 			a.logger.Printf("run %s : lecture segment : %v", r.ID, err)
