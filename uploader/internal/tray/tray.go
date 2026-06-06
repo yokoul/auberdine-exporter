@@ -19,6 +19,7 @@ import (
 
 	"github.com/yokoul/auberdine-exporter/uploader/internal/app"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/connect"
 )
 
 //go:embed icon.png
@@ -40,6 +41,8 @@ func Run(ctx context.Context, a *app.App, _ config.Config, logger *log.Logger) {
 		mStatus := systray.AddMenuItem("Démarrage…", "")
 		mStatus.Disable()
 		systray.AddSeparator()
+		mConnect := systray.AddMenuItem("Se connecter à auberdine.eu", "Lie l'uploader à votre compte (ouvre le navigateur)")
+		systray.AddSeparator()
 		mPause := systray.AddMenuItemCheckbox("Pause", "Suspend toute transmission", a.Paused())
 		systray.AddSeparator()
 		mExports := systray.AddMenuItemCheckbox("Envoyer les exports", "Transmettre les exports de l'addon", a.UploadExports())
@@ -55,11 +58,20 @@ func Run(ctx context.Context, a *app.App, _ config.Config, logger *log.Logger) {
 			}
 		}
 		refresh := func() {
-			if a.Paused() {
+			switch {
+			case !a.HasAPIKey():
+				mStatus.SetTitle("⚠ Non connecté")
+				mConnect.SetTitle("Se connecter à auberdine.eu")
+			case a.Paused():
 				mStatus.SetTitle("⏸ En pause")
+				mConnect.SetTitle("Reconnecter (révoque l'ancienne clé)")
+			default:
+				mStatus.SetTitle("▶ Actif — connecté")
+				mConnect.SetTitle("Reconnecter (révoque l'ancienne clé)")
+			}
+			if a.Paused() {
 				mPause.Check()
 			} else {
-				mStatus.SetTitle("▶ Actif")
 				mPause.Uncheck()
 			}
 			setChecked(mExports, a.UploadExports())
@@ -80,6 +92,23 @@ func Run(ctx context.Context, a *app.App, _ config.Config, logger *log.Logger) {
 				case <-ctx.Done():
 					systray.Quit()
 					return
+				case <-mConnect.ClickedCh:
+					mConnect.SetTitle("Connexion en cours… (voir le navigateur)")
+					go func() {
+						key, err := connect.Provision(ctx, a.Endpoint(), func(u string) {
+							if err := connect.OpenBrowser(u); err != nil {
+								logger.Printf("ouverture navigateur : %v (ouvrez : %s)", err, u)
+							}
+						}, logger)
+						if err != nil {
+							logger.Printf("connexion : %v", err)
+						} else if err := a.SetAPIKey(key); err != nil {
+							logger.Printf("enregistrement de la clé : %v", err)
+						} else {
+							logger.Print("uploader connecté à auberdine.eu")
+						}
+						refresh()
+					}()
 				case <-mPause.ClickedCh:
 					a.SetPaused(!a.Paused())
 					refresh()

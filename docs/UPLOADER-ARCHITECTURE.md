@@ -190,26 +190,36 @@ SavedVariable. L'uploader ne fait que le consommer.
 
 ## 7. Contrat d'API d'ingestion
 
-Dépendance amont n°2 (côté auberdine.eu). Le dossier `server/` actuel est la
-graine de la **validation** ; l'endpoint réseau reste à définir.
+**Figé : contrat `/ingest` v1** (côté auberdine.eu, cf. `botoul/docs/ingest-api.md`).
+Le client Go l'implémente intégralement.
 
-| Endpoint | Charge utile | En-têtes |
-|----------|--------------|----------|
-| `POST /ingest/export` | structure `AuberdineExporterDB` sérialisée en JSON (gzip) | `X-Auberdine-Account`, `X-Auberdine-Discord` |
-| `POST /ingest/combatlog` | segment de log **brut** (gzip) | `X-Auberdine-Run`, `X-Auberdine-Instance`, `X-Auberdine-Character`, `X-Auberdine-Discord` |
+| Endpoint | Charge utile | Notes |
+|----------|--------------|-------|
+| `GET /ingest/status` | — | handshake au démarrage : valide la clé, expose `linkedDiscord` + limites |
+| `POST /ingest/export` | `{ "jsonData": "<export **signé** de l'addon>" }` | corps JSON ; relayé tel quel |
+| `POST /ingest/combatlog` | `{ "meta": { sha256, sizeRaw, instance{name,mapId}, uploader, realm, … }, "logGzipBase64": "…" }` | segment gzippé + base64, sha256/sizeRaw calculés par le client |
 
-- **Données transmises telles quelles** : l'identité venant de Discord, le
-  schéma signature/challenge (qui ne servait qu'à sécuriser le copier-coller
-  anonyme) devient redondant ; l'uploader envoie la structure de l'addon sans
-  la re-signer.
-- **Authentification (déférable)** : login Discord — **même mécanique que sur
-  auberdine.eu**, pour lier le compte Discord aux personnages WoW. À défaut, au
-  minimum l'identifiant Discord est joint à la publication (`X-Auberdine-Discord`)
-  pour le recoupement côté serveur. Le jeton OAuth, quand présent, est envoyé en
-  `Authorization: Bearer`.
-- **Idempotence** : le serveur ignore un `id` de run déjà reçu (réémissions
-  sûres).
-- **Compression** : `Content-Encoding: gzip` sur tous les envois.
+- **Authentification : clé API.** `Authorization: Bearer ak_<clé>`, scope
+  `ingest:upload`. La clé **porte le `discord_id`** côté serveur : c'est lui qui
+  déclenche l'auto-claim des personnages. Familles de clés par `purpose` :
+  `ingest` (ce client) vit indépendamment de `public-api` (clé développeur), sans
+  collision ni révocation croisée.
+- **Provisioning sans CLI ni copier-coller** (pattern loopback RFC 8252). Le
+  client ouvre le navigateur sur `auberdine.eu/uploader/connect?port&state` ; le
+  site, authentifié par le cookie Discord, crée la clé (`ensure` / `regenerate`)
+  et **redirige le secret vers `http://127.0.0.1:<port>/callback`** que le démon
+  écoute le temps de la connexion. Le site reste l'autorité ; le démon ne touche
+  jamais Discord. Détail du contrat serveur : `UPLOADER-CONNECT-SERVER-BRIEF.md`.
+  Déclenché par le bouton **« Se connecter »** du tray (ou `connect` en CLI).
+- **L'export reste signé par l'addon.** L'uploader ne sait pas signer ; l'addon
+  persiste le wrapper signé (`dataBase64` + `signature`) dans
+  `AuberdineExporterDB.uploaderExport` au logout, et le démon le relaie tel quel
+  (passe `verify-signature` côté serveur).
+- **Idempotence** : le serveur déduplique les combatlogs par SHA-256
+  (`duplicate: true` sans effet de bord) ; le client déduplique aussi localement
+  (hash d'export, runs déjà transmis).
+- **Erreurs** : 4xx (hors 429) = définitif, non retenté à l'identique ; réseau /
+  429 / 5xx = transitoire, retry à backoff exponentiel.
 
 ---
 
@@ -244,27 +254,26 @@ de paquets. Pas d'étape de signature.
 
 ## 9. Sécurité et vie privée
 
-- Un log de combat contient les **noms de tous les joueurs croisés**, pas
-  seulement les siens → **consentement explicite et granulaire** au premier
-  lancement (j'envoie : mes exports / mes logs de donjon / les deux).
-- **Transparence** : `auberdine status` affiche ce qui part (« X runs, Y Mo
-  envoyés aujourd'hui »).
-- **Token** stocké dans le répertoire de config utilisateur, jamais dans le
-  dépôt.
-- Intégrité conservée via le schéma signature/checksum existant.
-- Anonymisation éventuelle : **décision produit à trancher** avant la phase 1
-  (cf. risques ouverts).
+- **Consentement tacite, granularité simple.** Ce sont des données de jeu, sans
+  information personnelle pertinente sur le joueur ; pas d'écran de consentement.
+  Le contrôle reste **granulaire et accessible** : bascules **« Envoyer les
+  exports »** et **« Envoyer les logs de donjon »** dans le tray (persistées dans
+  la config), + **Pause** globale. Côté addon, le log de donjon s'active
+  automatiquement à l'entrée et peut se couper via le réglage `dungeonLogging`.
+- **Clé API** stockée en `0o600` dans le répertoire de config utilisateur,
+  jamais dans le dépôt.
+- Intégrité conservée via le schéma signature/checksum existant (l'addon signe,
+  le serveur vérifie).
 
 ---
 
 ## 10. État local et reprise
 
-Store minimal dans `XDG_STATE_HOME` (Linux/macOS) / `%AppData%` (Windows) :
+Store minimal dans le répertoire de cache utilisateur (surchargeable via
+`AUBERDINE_UPLOADER_STATE_DIR`) :
 
-- offsets déjà transmis par fichier de log ;
-- hashs de dédup des segments/exports ;
-- file d'attente persistante (reprise hors-ligne) ;
-- `id` de runs déjà confirmés par le serveur.
+- hash de dédup du dernier export transmis, par fichier SavedVariables ;
+- `id` de runs de donjon déjà transmis (dédup).
 
 Aucune donnée d'activité « métier » n'est conservée — uniquement de l'état
 technique de transmission.
@@ -273,31 +282,32 @@ technique de transmission.
 
 ## 11. Trajectoire d'implémentation
 
-| Phase | Contenu | Valide |
-|-------|---------|--------|
-| **P0** | Démon Go minimal : watcher SavedVariable → `POST /ingest/export` (auth token). Pas de log de combat. | tout le pipeline découverte/auth/serveur |
-| **P1** | Manifeste addon + segmentation + upload incrémental gzip des logs de donjon. | le cœur fonctionnel |
-| **P2** | Empaquetage Homebrew/Scoop/systemd, `brew services`, `auberdine doctor`, consentement granulaire. | distribution & UX |
-| **P3** | Durcissement : mono-instance, reprise hors-ligne robuste, observabilité, repli segmenteur. | fiabilité |
+| Phase | Contenu | État |
+|-------|---------|------|
+| **P0** | Démon Go : watcher SavedVariable → `POST /ingest/export`, auth clé API, handshake `/ingest/status`. | ✅ fait |
+| **P1** | Manifeste addon + segmentation + upload gzip/base64 des logs de donjon (`/ingest/combatlog`). | ✅ fait |
+| **P1.5** | Connexion sans CLI : provisioning de la clé par loopback navigateur (`connect` + tray). | ✅ côté client (page serveur à livrer) |
+| **P2** | Empaquetage Homebrew/Scoop/systemd, `brew services`. | à faire |
+| **P3** | Durcissement : mono-instance, reprise hors-ligne robuste, observabilité. | à faire |
 
 ---
 
 ## 12. Dépendances amont et risques ouverts
 
-1. **Manifeste côté addon** (§6) — sans lui, le démon retombe sur le mode
-   dégradé. À planifier en parallèle côté `AuberdineExporter.lua`.
-2. **API d'ingestion** (§7) — endpoint + auth par token à concevoir côté
-   auberdine.eu ; le `server/` actuel ne couvre que la validation.
-3. **Politique de vie privée** (§9) — anonymisation des tiers : à trancher avant
-   P1.
-4. **Format exact des offsets** — robustesse face au buffering d'écriture du
-   log par le client WoW ; à valider sur données réelles.
+1. ✅ **Manifeste côté addon** (§6) — livré (`DungeonLogger.lua`).
+2. ✅ **API d'ingestion** (§7) — contrat `/ingest` v1 figé et implémenté.
+3. ✅ **Politique de vie privée** (§9) — consentement tacite + bascules tray.
+4. **Page serveur `/uploader/connect`** (§7) — provisioning loopback de la clé ;
+   client prêt, page à livrer côté auberdine.eu (`UPLOADER-CONNECT-SERVER-BRIEF.md`).
+5. **Validation sur données réelles** — segmentation par fenêtre temporelle face
+   au buffering d'écriture du log par le client WoW ; export signé régénéré au
+   logout. **Non encore testé en jeu de bout en bout** (connexion + serveur).
 
 ---
 
 ## Décision
 
-À valider : périmètre (pont mince, distinct du client Electron), démon Go léger
-distribué par gestionnaires de paquets sans certificat, et les deux dépendances
-amont (manifeste addon + contrat d'API). Une fois validé → implémentation à
-partir de la phase P0.
+**Validé et implémenté (P0/P1)** : périmètre (pont mince, distinct du client
+Electron), démon Go léger sans certificat, manifeste addon et contrat d'API
+`/ingest` v1 (auth clé API). Reste P2/P3 (empaquetage, durcissement) et la
+validation en jeu de bout en bout.

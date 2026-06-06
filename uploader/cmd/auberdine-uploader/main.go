@@ -19,6 +19,7 @@ import (
 
 	"github.com/yokoul/auberdine-exporter/uploader/internal/app"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/connect"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/discovery"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/tray"
 )
@@ -40,6 +41,8 @@ func main() {
 		runDaemon(cfg)
 	case "tray":
 		runTray(cfg)
+	case "connect":
+		runConnect(cfg)
 	case "status":
 		runStatus(cfg)
 	case "doctor":
@@ -59,6 +62,7 @@ func usage() {
 Usage:
   auberdine-uploader [daemon]   Lance la surveillance (défaut)
   auberdine-uploader tray       Lance la surveillance avec l'icône de barre des tâches
+  auberdine-uploader connect    Connecte l'uploader à auberdine.eu (ouvre le navigateur)
   auberdine-uploader status     Affiche l'état courant
   auberdine-uploader doctor     Diagnostique la détection des fichiers
 
@@ -95,6 +99,29 @@ func runDaemon(cfg config.Config) {
 	if err := a.Run(ctx); err != nil && err != context.Canceled {
 		fmt.Fprintf(os.Stderr, "arrêt: %v\n", err)
 	}
+}
+
+func runConnect(cfg config.Config) {
+	logger := log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	fmt.Println("Ouverture du navigateur pour la connexion à auberdine.eu…")
+	key, err := connect.Provision(ctx, cfg.Endpoint, func(u string) {
+		if err := connect.OpenBrowser(u); err != nil {
+			fmt.Printf("Impossible d'ouvrir le navigateur. Ouvrez ce lien manuellement :\n  %s\n", u)
+		}
+	}, logger)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "connexion: %v\n", err)
+		os.Exit(1)
+	}
+	cfg.APIKey = key
+	if err := cfg.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "enregistrement de la clé: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Connecté à auberdine.eu ✅ La clé a été enregistrée.")
 }
 
 func runStatus(cfg config.Config) {
