@@ -21,3 +21,6 @@ AuberdineExporter.lua
 
 # Guild tracking
 GuildTracker.lua
+
+# Dungeon combat-log manifest (pour l'uploader local)
+DungeonLogger.lua

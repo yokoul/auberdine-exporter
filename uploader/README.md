@@ -78,7 +78,9 @@ Implémenté (P0) :
 - [x] Détection multi-OS des chemins (Windows / macOS / Linux-Wine)
 - [x] Surveillance par polling léger, sans dépendance
 - [x] Pipeline d'export : parse → dédup → upload
-- [x] Consommation du manifeste de runs → upload de segments bruts de log
+- [x] Manifeste côté addon (`DungeonLogger.lua` : `LoggingCombat` + `uploaderManifest`)
+- [x] Découpage des logs de donjon **par fenêtre temporelle** (timestamps → octets) + envoi brut
+- [x] Association de l'identifiant Discord à la publication (`X-Auberdine-Discord`)
 - [x] Client HTTP gzip + retry à backoff exponentiel
 - [x] État technique persistant (dédup, offsets)
 - [x] Commandes `daemon` / `status` / `doctor`
@@ -86,8 +88,7 @@ Implémenté (P0) :
 À venir :
 
 - [ ] **Tray** (icône barre des tâches) : quit / pause / login Discord / logout Discord
-- [ ] **Discord OAuth** (flux navigateur + redirection loopback)
-- [ ] **Manifeste côté addon** (`LoggingCombat` + `uploaderManifest`) — dépendance amont
+- [ ] **Discord OAuth** (flux navigateur + redirection loopback) — déférable
 - [ ] **Contrat d'API d'ingestion** auberdine.eu (endpoints + auth) — dépendance amont
 - [ ] Empaquetage Homebrew / Scoop / systemd-user
 ```

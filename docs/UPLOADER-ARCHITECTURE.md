@@ -159,11 +159,8 @@ SavedVariable. L'uploader ne fait que le consommer.
         "instanceId": 36,
         "character": "Carnalis-Auberdine",
         "group": ["Carnalis-Auberdine", "..."], // composition au moment du run
-        "startedAt": 1733500000,          // epoch s (début du log de combat)
-        "endedAt": 1733503600,            // epoch s (fin)
-        "logFile": "WoWCombatLog.txt",    // fichier concerné
-        "byteStart": 10485760,            // offset approx. de début dans le log
-        "byteEnd": 12582912,              // offset approx. de fin (peut être nul si en cours)
+        "startedAt": 1733500000,          // epoch s (entrée dans le donjon)
+        "endedAt": 1733503600,            // epoch s (sortie ; 0 tant que le run est en cours)
         "status": "complete"             // "in_progress" | "complete"
       }
     ]
@@ -171,15 +168,23 @@ SavedVariable. L'uploader ne fait que le consommer.
 }
 ```
 
+> **Timestamps, pas d'octets.** L'addon ne peut pas connaître la position en
+> octets dans `WoWCombatLog.txt`. Il ne fournit donc que des bornes
+> temporelles ; c'est **l'uploader** qui mappe `[startedAt, endedAt]` vers une
+> plage d'octets en lisant l'horodatage de chaque ligne du log (avec une marge
+> de quelques secondes). Le segment ainsi découpé est transmis **brut**.
+
 ### Règles de robustesse
 
-- **Idempotence** : `id` stable → le serveur déduplique les renvois.
-- Les offsets sont **indicatifs** : l'uploader confirme les bornes en relisant
-  les marqueurs `ENCOUNTER_START` / `ENCOUNTER_END` / changement de zone dans la
-  fenêtre fournie (tolérance aux décalages d'écriture).
-- **Repli** si le manifeste manque (vieil addon, log activé manuellement) : un
-  segmenteur minimal côté uploader, basé sur les lignes de log de zone
-  d'instance. C'est un mode dégradé, pas le mode nominal.
+- **Idempotence** : `id` stable (`character-instanceId-startedAt`) → le serveur
+  et l'uploader dédupliquent les renvois.
+- L'uploader ne traite que les runs `complete` ; un run `in_progress` (crash,
+  `/reload`) est ignoré côté transmission.
+- **Cohérence de fuseau** : les horodatages du log sont en heure locale du
+  client ; comme l'uploader tourne sur la même machine, la conversion vers
+  l'epoch reste cohérente avec le `time()` Lua.
+- **Rétention** : l'addon borne le manifeste (100 runs) pour limiter la taille
+  de la SavedVariable.
 
 ---
 
@@ -188,17 +193,23 @@ SavedVariable. L'uploader ne fait que le consommer.
 Dépendance amont n°2 (côté auberdine.eu). Le dossier `server/` actuel est la
 graine de la **validation** ; l'endpoint réseau reste à définir.
 
-| Endpoint | Charge utile | Notes |
-|----------|--------------|-------|
-| `POST /ingest/export` | export JSON multi-perso existant (Base64 + signature) | réutilise le schéma de validation actuel |
-| `POST /ingest/combatlog` | segment de log gzippé + métadonnées du run (`id`, `instance`, bornes) | idempotent via `id` du run |
+| Endpoint | Charge utile | En-têtes |
+|----------|--------------|----------|
+| `POST /ingest/export` | structure `AuberdineExporterDB` sérialisée en JSON (gzip) | `X-Auberdine-Account`, `X-Auberdine-Discord` |
+| `POST /ingest/combatlog` | segment de log **brut** (gzip) | `X-Auberdine-Run`, `X-Auberdine-Instance`, `X-Auberdine-Character`, `X-Auberdine-Discord` |
 
-- **Authentification** : **token par utilisateur**, réclamé sur auberdine.eu et
-  stocké localement (remplace le `challenge` hardcodé). Le schéma
-  signature/checksum existant est conservé pour l'intégrité.
+- **Données transmises telles quelles** : l'identité venant de Discord, le
+  schéma signature/challenge (qui ne servait qu'à sécuriser le copier-coller
+  anonyme) devient redondant ; l'uploader envoie la structure de l'addon sans
+  la re-signer.
+- **Authentification (déférable)** : login Discord — **même mécanique que sur
+  auberdine.eu**, pour lier le compte Discord aux personnages WoW. À défaut, au
+  minimum l'identifiant Discord est joint à la publication (`X-Auberdine-Discord`)
+  pour le recoupement côté serveur. Le jeton OAuth, quand présent, est envoyé en
+  `Authorization: Bearer`.
 - **Idempotence** : le serveur ignore un `id` de run déjà reçu (réémissions
   sûres).
-- **Compression** : `Content-Encoding: gzip` pour les segments de log.
+- **Compression** : `Content-Encoding: gzip` sur tous les envois.
 
 ---
 

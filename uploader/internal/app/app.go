@@ -42,7 +42,10 @@ func New(cfg config.Config, up upload.Uploader, logger *log.Logger) (*App, error
 		return nil, err
 	}
 	if up == nil {
-		up = upload.NewHTTP(cfg.Endpoint, func() string { return cfg.Discord.AccessToken })
+		up = upload.NewHTTP(cfg.Endpoint,
+			func() string { return cfg.Discord.AccessToken },
+			func() string { return cfg.Discord.UserID },
+		)
 	}
 	if logger == nil {
 		logger = log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
@@ -147,13 +150,32 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 	if len(runs) == 0 {
 		return nil
 	}
+	year := time.Now().Year()
 	for _, r := range runs {
 		if r.Status != "complete" || a.state.runSent(r.ID) {
 			continue
 		}
-		segment, err := readSegment(a.paths.CombatLog, r.ByteStart, r.ByteEnd)
+		// Bornes en octets explicites (override de test/debug) sinon
+		// segmentation par fenêtre temporelle — l'addon ne fournit que des
+		// timestamps, pas d'offsets.
+		var (
+			segment []byte
+			err     error
+		)
+		if r.ByteEnd > r.ByteStart {
+			segment, err = readSegment(a.paths.CombatLog, r.ByteStart, r.ByteEnd)
+		} else {
+			segment, err = segmentByTime(a.paths.CombatLog, r.StartedAt, r.EndedAt, year)
+		}
 		if err != nil {
 			a.logger.Printf("run %s : lecture segment : %v", r.ID, err)
+			continue
+		}
+		if len(segment) == 0 {
+			// Aucune ligne dans la fenêtre : on n'envoie pas un segment vide,
+			// mais on ne re-scanne pas indéfiniment.
+			a.logger.Printf("run %s : segment vide, ignoré", r.ID)
+			a.state.markRunSent(r.ID)
 			continue
 		}
 		meta := upload.DungeonMeta{

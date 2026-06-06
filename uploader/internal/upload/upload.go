@@ -38,16 +38,21 @@ type HTTPClient struct {
 	BaseURL string
 	// Token est le jeton d'accès Discord (Bearer).
 	Token func() string
-	hc    *http.Client
+	// DiscordID fournit l'identifiant Discord à associer à la publication
+	// (recoupement compte Discord ↔ personnages WoW côté serveur).
+	DiscordID func() string
+	hc        *http.Client
 }
 
-// NewHTTP construit un client HTTP vers baseURL. tokenFn est appelée à chaque
-// requête pour récupérer le jeton courant (il peut être rafraîchi entre-temps).
-func NewHTTP(baseURL string, tokenFn func() string) *HTTPClient {
+// NewHTTP construit un client HTTP vers baseURL. tokenFn et discordIDFn sont
+// appelées à chaque requête pour récupérer les valeurs courantes (elles peuvent
+// changer après un login). discordIDFn peut être nil.
+func NewHTTP(baseURL string, tokenFn, discordIDFn func() string) *HTTPClient {
 	return &HTTPClient{
-		BaseURL: baseURL,
-		Token:   tokenFn,
-		hc:      &http.Client{Timeout: 60 * time.Second},
+		BaseURL:   baseURL,
+		Token:     tokenFn,
+		DiscordID: discordIDFn,
+		hc:        &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -104,6 +109,11 @@ func (c *HTTPClient) post(ctx context.Context, path string, headers map[string]s
 		if c.Token != nil {
 			if tok := c.Token(); tok != "" {
 				req.Header.Set("Authorization", "Bearer "+tok)
+			}
+		}
+		if c.DiscordID != nil {
+			if id := c.DiscordID(); id != "" {
+				req.Header.Set("X-Auberdine-Discord", id)
 			}
 		}
 		for k, v := range headers {
