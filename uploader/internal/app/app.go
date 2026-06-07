@@ -36,6 +36,11 @@ type App struct {
 	cfg config.Config
 
 	apiKeyWarned bool
+
+	// addonWarned mémorise les versions d'addon déjà signalées comme trop
+	// anciennes (clé : chemin SV + version) — un avertissement par démarrage,
+	// pas un par cycle de poll.
+	addonWarned map[string]bool
 }
 
 // New construit le démon à partir de la configuration. Le client d'upload peut
@@ -215,6 +220,7 @@ func (a *App) processExport(ctx context.Context, svPath string) error {
 	if !ok {
 		return nil // fichier présent mais sans données de l'addon
 	}
+	a.checkAddonVersion(svPath, db)
 	exp, ok := db["uploaderExport"].(map[string]any)
 	if !ok {
 		return nil // l'addon n'a pas encore publié d'export signé (logout requis)

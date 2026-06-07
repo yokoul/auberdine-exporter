@@ -165,6 +165,7 @@ func runDoctor(cfg config.Config) {
 	} else {
 		for _, sv := range paths.SavedVars {
 			fmt.Printf("✓ SavedVariables : %s\n", sv)
+			fmt.Printf("  · %s\n", app.AddonVersionVerdict(sv))
 		}
 	}
 	logs := discovery.ListCombatLogs(paths.LogsDir)
