@@ -28,8 +28,15 @@ $tmp   = Join-Path $env:TEMP 'auberdine-uploader.exe'
 Write-Host "-> Téléchargement de $asset..."
 Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
 
+# Lance un binaire GUI et n'attend QUE lui. Surtout pas Start-Process -Wait :
+# sous Windows PowerShell 5.1 il attend aussi les DESCENDANTS — install
+# démarre le service en arrière-plan, le script ne rendait jamais la main.
+function Invoke-Uploader([string]$Arguments) {
+    $p = Start-Process -FilePath $tmp -ArgumentList $Arguments -NoNewWindow -PassThru
+    $p.WaitForExit()
+}
+
 # Connexion AVANT l'installation : le service démarre déjà connecté.
-# (Binaire GUI : Start-Process -Wait, sinon PowerShell n'attend pas.)
 $cfgPath = Join-Path $env:APPDATA 'auberdine-uploader\config.json'
 $hasKey = $false
 if (Test-Path $cfgPath) {
@@ -39,11 +46,11 @@ if ($hasKey) {
     Write-Host '-> Clé d''ingestion déjà configurée — connexion conservée.'
 } else {
     Write-Host '-> Connexion à auberdine.eu (le navigateur va s''ouvrir)...'
-    Start-Process -FilePath $tmp -ArgumentList 'connect' -Wait -NoNewWindow
+    Invoke-Uploader 'connect'
 }
 
 Write-Host '-> Installation du démarrage automatique...'
-Start-Process -FilePath $tmp -ArgumentList 'install' -Wait -NoNewWindow
+Invoke-Uploader 'install'
 
 Remove-Item $tmp -ErrorAction SilentlyContinue
 Write-Host ''

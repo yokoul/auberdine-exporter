@@ -57,6 +57,11 @@ func Install(mode string, logger *log.Logger) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: detachedProcess | createNewProcessGroup,
 	}
+	// Même détaché, l'AttachConsole du binaire retrouverait la console du
+	// parent (console_windows.go) — cette variable lui interdit toute
+	// console : pas de logs parasites dans le terminal d'install, et la
+	// fermeture de la fenêtre ne peut plus l'atteindre.
+	cmd.Env = append(os.Environ(), "AUBERDINE_UPLOADER_NO_CONSOLE=1")
 	if err := cmd.Start(); err != nil {
 		logger.Printf("démarrage immédiat impossible (%v) — il démarrera à la prochaine session", err)
 	}

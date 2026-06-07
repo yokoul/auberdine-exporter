@@ -19,6 +19,14 @@ import (
 )
 
 func init() {
+	// Posée par install lors du démarrage immédiat du service : même détaché
+	// (DETACHED_PROCESS), AttachConsole RETROUVERAIT la console du parent —
+	// le tray pollue alors le terminal d'install, Start-Process -Wait ne
+	// rend jamais la main (il attend les descendants), et fermer la fenêtre
+	// le tuerait (CTRL_CLOSE). Le service ne touche jamais à la console.
+	if os.Getenv("AUBERDINE_UPLOADER_NO_CONSOLE") == "1" {
+		return
+	}
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
 	attachConsole := kernel32.NewProc("AttachConsole")
 	const attachParentProcess = ^uintptr(0) // (DWORD)-1
