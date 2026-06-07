@@ -30,10 +30,25 @@ func stableBinaryPath() (string, error) {
 	return filepath.Join(local, "auberdine-uploader", binaryName+".exe"), nil
 }
 
+// stopInstalled termine l'instance en cours du binaire installé. Indispensable
+// à la réinstallation/mise à jour : sans ça, deux services cohabitent — et
+// Windows verrouille un exe en exécution, la copie du nouveau binaire
+// échouerait. Filtré par chemin EXACT : le temporaire d'install (même nom
+// d'image, chemin différent) n'est pas touché.
+func stopInstalled(dest string) {
+	script := fmt.Sprintf(
+		"Get-Process -Name auberdine-uploader -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '%s' } | Stop-Process -Force",
+		strings.ReplaceAll(dest, "'", "''"))
+	_ = exec.Command("powershell", "-NoProfile", "-Command", script).Run()
+}
+
 // Install enregistre le démarrage automatique à l'ouverture de session via la
 // clé Run du registre (posée avec reg.exe — pas de dépendance Go externe),
 // puis lance le service immédiatement.
 func Install(mode string, logger *log.Logger) error {
+	if dest, derr := stableBinaryPath(); derr == nil {
+		stopInstalled(dest)
+	}
 	bin, err := copySelf()
 	if err != nil {
 		return err
@@ -79,8 +94,9 @@ func Uninstall(logger *log.Logger) error {
 		removed = true
 	}
 	if bin, err := stableBinaryPath(); err == nil {
-		// Sous Windows un binaire en cours d'exécution ne peut pas être
-		// supprimé : signaler plutôt qu'échouer.
+		// Termine l'instance en cours avant de retirer son binaire (un exe
+		// en exécution est verrouillé par Windows).
+		stopInstalled(bin)
 		if err := os.Remove(bin); err == nil {
 			removed = true
 		} else if !os.IsNotExist(err) {
