@@ -16,6 +16,11 @@ import (
 // le log sur l'horodatage de chaque ligne).
 const segMargin = 5 * time.Second
 
+// flushGrace est l'âge minimal d'un run clos avant son découpage : le client
+// WoW écrit le log par blocs bufferisés, lire trop tôt tronque le segment au
+// point de flush (UNIT_DIED du dernier boss perdu, cas réel au Monastère).
+const flushGrace = 60 * time.Second
+
 // combatLogCandidates filtre les logs dont la plage [SessionStart, ModTime]
 // intersecte la fenêtre [startedAt, endedAt] du run (marge comprise). L'ordre
 // d'entrée (du plus récent au plus ancien, cf. ListCombatLogs) est conservé.

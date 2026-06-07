@@ -265,6 +265,15 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 		if r.Status != "complete" || a.state.runSent(r.ID) {
 			continue
 		}
+		// Délai de grâce : le client WoW écrit son log par blocs bufferisés.
+		// Découper un run fraîchement clos peut tronquer le segment au
+		// milieu d'un bloc non encore flushé — cas réel : le UNIT_DIED du
+		// dernier boss (1 ms après son ENCOUNTER_END) absent du segment au
+		// Monastère, dev ET prod. On laisse le client finir d'écrire ; le
+		// run mûrira au prochain cycle de poll.
+		if time.Since(time.Unix(r.EndedAt, 0)) < flushGrace {
+			continue
+		}
 		// Le client 1.15.8+ crée un log horodaté PAR session de logging :
 		// on liste à chaque passage et on ne retient que les fichiers dont
 		// la plage [SessionStart, ModTime] intersecte la fenêtre du run.
