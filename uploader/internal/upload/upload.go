@@ -21,10 +21,13 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/yokoul/auberdine-exporter/uploader/internal/version"
 )
 
-// ClientVersion identifie le client dans les métadonnées d'upload.
-const ClientVersion = "1.0.0"
+// ClientVersion identifie le client dans les métadonnées d'upload (version
+// réelle du binaire, injectée au build — "dev" sur un build local).
+var ClientVersion = version.Version
 
 const clientName = "auberdine-uploader"
 
@@ -49,6 +52,23 @@ type StatusResponse struct {
 		LinkedDiscord bool     `json:"linkedDiscord"`
 		RateLimit     int      `json:"rateLimit"`
 	} `json:"partner"`
+	// Client décrit la release courante de l'uploader telle que vue par le
+	// serveur (pilote la mise à jour automatique). Absent sur un serveur qui
+	// ne la publie pas encore : l'auto-update est alors simplement inactif.
+	Client *ClientRelease `json:"client,omitempty"`
+}
+
+// ClientRelease décrit la dernière release publiée de l'uploader.
+type ClientRelease struct {
+	Latest       string                  `json:"latest"`       // tag, ex. "v0.2.0"
+	MinSupported string                  `json:"minSupported"` // en-deçà : mise à jour fortement recommandée
+	Assets       map[string]ReleaseAsset `json:"assets"`       // clé = nom de fichier de l'asset
+}
+
+// ReleaseAsset est un binaire téléchargeable d'une release.
+type ReleaseAsset struct {
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
 }
 
 // ExportResult résume la réponse de POST /ingest/export.

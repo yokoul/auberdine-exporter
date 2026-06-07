@@ -22,7 +22,10 @@ import (
 	"github.com/yokoul/auberdine-exporter/uploader/internal/connect"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/discovery"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/install"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/selfupdate"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/tray"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/upload"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/version"
 )
 
 func main() {
@@ -52,6 +55,10 @@ func main() {
 		runInstall()
 	case "uninstall":
 		runUninstall()
+	case "update":
+		runUpdate(cfg)
+	case "version", "-v", "--version":
+		fmt.Println(version.Version)
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -72,6 +79,8 @@ Usage:
   auberdine-uploader doctor     Diagnostique la détection des fichiers
   auberdine-uploader install    Installe le service utilisateur (démarre à l'ouverture de session)
   auberdine-uploader uninstall  Retire le service utilisateur (conserve config et clé)
+  auberdine-uploader update     Met à jour le binaire vers la dernière release publiée
+  auberdine-uploader version    Affiche la version du binaire
 
 Le tray nécessite un binaire compilé avec -tags tray ; install lance le tray
 si le binaire le permet, le démon sinon.
@@ -130,6 +139,48 @@ func runConnect(cfg config.Config) {
 		os.Exit(1)
 	}
 	fmt.Println("Connecté à auberdine.eu ✅ La clé a été enregistrée.")
+}
+
+// runUpdate met à jour le binaire courant vers la dernière release annoncée
+// par le serveur. Le service installé, lui, se met à jour tout seul (contrôle
+// au démarrage puis quotidien) : cette commande sert au contrôle manuel.
+func runUpdate(cfg config.Config) {
+	if !cfg.HasAPIKey() {
+		fmt.Fprintln(os.Stderr, "clé API absente : lancez d'abord `auberdine-uploader connect`")
+		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	up := upload.NewHTTP(cfg.Endpoint, func() string { return cfg.APIKey })
+	st, err := up.Status(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "interrogation du serveur: %v\n", err)
+		os.Exit(1)
+	}
+	if st.Client == nil {
+		fmt.Println("Le serveur n'annonce pas encore de release du client — rien à faire.")
+		return
+	}
+	fmt.Printf("Version courante : %s — dernière release : %s\n", version.Version, st.Client.Latest)
+	asset, ok := selfupdate.Available(st.Client)
+	if !ok {
+		if version.IsDev() {
+			fmt.Println("Build de développement : mise à jour automatique désactivée.")
+		} else {
+			fmt.Println("Déjà à jour.")
+		}
+		return
+	}
+	fmt.Println("Téléchargement et vérification…")
+	exe, err := selfupdate.Apply(ctx, asset)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mise à jour: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Binaire mis à jour : %s\n", exe)
+	fmt.Println("Le service en cours d'exécution basculera à son prochain redémarrage")
+	fmt.Println("(ou immédiatement via : uninstall puis install).")
 }
 
 func runStatus(cfg config.Config) {

@@ -18,8 +18,14 @@ import (
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/discovery"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/luasv"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/selfupdate"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/upload"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/version"
 )
+
+// updateCheckInterval est la cadence de re-vérification des mises à jour du
+// binaire, en plus du contrôle au démarrage (handshake).
+const updateCheckInterval = 24 * time.Hour
 
 // App est le démon de l'uploader.
 type App struct {
@@ -141,40 +147,91 @@ func (a *App) Run(ctx context.Context) error {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
-	a.logger.Printf("démarrage : %d SavedVariables, logs=%s (%d log(s) de combat présents)",
-		len(a.paths.SavedVars), a.paths.LogsDir, len(discovery.ListCombatLogs(a.paths.LogsDir)))
-	a.handshake(ctx)
+	a.logger.Printf("démarrage : %d SavedVariables, logs=%s (%d log(s) de combat présents) — version %s",
+		len(a.paths.SavedVars), a.paths.LogsDir, len(discovery.ListCombatLogs(a.paths.LogsDir)), version.Version)
+	selfupdate.CleanupLeftovers()
+	if st, ok := a.handshake(ctx); ok {
+		a.maybeSelfUpdate(ctx, st.Client)
+	}
 
-	// Premier passage immédiat, puis à intervalle régulier.
+	// Premier passage immédiat, puis à intervalle régulier. La vérification de
+	// mise à jour vit dans la même boucle que tick() : jamais en concurrence
+	// avec un upload en cours.
 	a.tick(ctx)
 	t := time.NewTicker(interval)
 	defer t.Stop()
+	ut := time.NewTicker(updateCheckInterval)
+	defer ut.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-t.C:
 			a.tick(ctx)
+		case <-ut.C:
+			a.checkSelfUpdate(ctx)
 		}
 	}
 }
 
-// handshake valide la clé API au démarrage et signale les anomalies de config
-// (clé absente/invalide, compte Discord non lié). Non bloquant.
-func (a *App) handshake(ctx context.Context) {
+// checkSelfUpdate interroge le serveur et applique une éventuelle mise à jour.
+func (a *App) checkSelfUpdate(ctx context.Context) {
 	if a.APIKey() == "" {
-		a.logger.Print("⚠ clé API non configurée : aucun envoi tant que apiKey est vide (voir config.json)")
 		return
 	}
 	st, err := a.uploader.Status(ctx)
 	if err != nil {
-		a.logger.Printf("⚠ handshake /ingest/status : %v", err)
+		a.logger.Printf("vérification de mise à jour : %v", err)
 		return
+	}
+	a.maybeSelfUpdate(ctx, st.Client)
+}
+
+// maybeSelfUpdate applique la mise à jour annoncée par le serveur si elle est
+// plus récente que le binaire courant, puis redémarre le service. Toute erreur
+// est non fatale : le démon continue sur la version en place et réessaiera au
+// prochain contrôle.
+func (a *App) maybeSelfUpdate(ctx context.Context, rel *upload.ClientRelease) {
+	a.mu.Lock()
+	disabled := a.cfg.DisableAutoUpdate
+	a.mu.Unlock()
+	if disabled {
+		return
+	}
+	asset, ok := selfupdate.Available(rel)
+	if !ok {
+		return
+	}
+	a.logger.Printf("mise à jour disponible : %s → %s, téléchargement...", version.Version, rel.Latest)
+	exe, err := selfupdate.Apply(ctx, asset)
+	if err != nil {
+		a.logger.Printf("mise à jour : %v", err)
+		return
+	}
+	a.logger.Printf("mise à jour %s installée, redémarrage", rel.Latest)
+	if err := selfupdate.Restart(exe); err != nil {
+		a.logger.Printf("redémarrage : %v — la nouvelle version prendra effet à la prochaine session", err)
+	}
+}
+
+// handshake valide la clé API au démarrage et signale les anomalies de config
+// (clé absente/invalide, compte Discord non lié). Non bloquant. Renvoie la
+// réponse du serveur (porte aussi l'annonce de release du client).
+func (a *App) handshake(ctx context.Context) (upload.StatusResponse, bool) {
+	if a.APIKey() == "" {
+		a.logger.Print("⚠ clé API non configurée : aucun envoi tant que apiKey est vide (voir config.json)")
+		return upload.StatusResponse{}, false
+	}
+	st, err := a.uploader.Status(ctx)
+	if err != nil {
+		a.logger.Printf("⚠ handshake /ingest/status : %v", err)
+		return upload.StatusResponse{}, false
 	}
 	if !st.Partner.LinkedDiscord {
 		a.logger.Print("⚠ clé API sans Discord lié : les imports passeront mais aucun personnage ne sera auto-claim")
 	}
 	a.logger.Printf("connecté à l'API d'ingestion (contrat v%d, clé « %s »)", st.ContractVersion, st.Partner.Label)
+	return st, true
 }
 
 // tick effectue un cycle de surveillance.

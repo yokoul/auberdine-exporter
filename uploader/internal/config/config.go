@@ -37,6 +37,10 @@ type Config struct {
 
 	// PollInterval est l'intervalle de scan des fichiers, en secondes.
 	PollIntervalSeconds int `json:"pollIntervalSeconds"`
+
+	// DisableAutoUpdate désactive la mise à jour automatique du binaire
+	// (annoncée par le serveur via /ingest/status). Actif par défaut.
+	DisableAutoUpdate bool `json:"disableAutoUpdate,omitempty"`
 }
 
 // HasAPIKey indique si une clé d'ingestion est configurée.
