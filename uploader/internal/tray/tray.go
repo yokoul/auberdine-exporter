@@ -19,6 +19,7 @@ import (
 	"github.com/yokoul/auberdine-exporter/uploader/internal/app"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/connect"
+	"github.com/yokoul/auberdine-exporter/uploader/internal/version"
 )
 
 // iconData : fourni par icon_windows.go (ICO) ou icon_other.go (PNG).
@@ -36,8 +37,12 @@ func Run(ctx context.Context, a *app.App, _ config.Config, logger *log.Logger) {
 		// Pas de SetTitle : sur macOS le titre s'affiche À CÔTÉ de l'icône
 		// dans la barre des menus et mange de la place — l'icône et le
 		// tooltip suffisent à identifier l'uploader.
-		systray.SetTooltip("Auberdine Uploader")
+		systray.SetTooltip("Auberdine Uploader " + version.Version)
 
+		// La version en tête de menu : seul témoin visible de la mise à jour
+		// automatique (le binaire évolue sans aucune action de l'utilisateur).
+		mVersion := systray.AddMenuItem("Auberdine Uploader "+version.Version, "Version du client — se met à jour automatiquement")
+		mVersion.Disable()
 		mStatus := systray.AddMenuItem("Démarrage…", "")
 		mStatus.Disable()
 		systray.AddSeparator()
