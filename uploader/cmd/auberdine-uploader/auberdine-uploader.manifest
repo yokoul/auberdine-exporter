@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Manifest Windows embarqué dans le binaire (via rsrc_windows_amd64.syso,
+  linké automatiquement par go build). asInvoker désactive l'« Installer
+  Detection » de l'UAC : sans manifest, Windows présume qu'un exe dont le
+  nom évoque une installation est un installeur et exige l'élévation —
+  l'uploader n'a jamais besoin de privilèges.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity version="1.0.0.0" processorArchitecture="*" name="eu.auberdine.uploader" type="win32"/>
+  <description>Auberdine Uploader</description>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>

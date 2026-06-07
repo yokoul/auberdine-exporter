@@ -20,7 +20,10 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $repo  = 'yokoul/auberdine-exporter'
 $asset = 'auberdine-uploader-windows-amd64.exe'
 $url   = "https://github.com/$repo/releases/latest/download/$asset"
-$tmp   = Join-Path $env:TEMP 'auberdine-uploader-install.exe'
+# Surtout PAS de « install » ou « setup » dans le nom du fichier : l'Installer
+# Detection de l'UAC exigerait l'élévation pour un exe sans manifest portant
+# un tel nom (« L'opération demandée nécessite une élévation », vécu).
+$tmp   = Join-Path $env:TEMP 'auberdine-uploader.exe'
 
 Write-Host "-> Téléchargement de $asset..."
 Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
