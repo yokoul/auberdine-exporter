@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // runKey est la clé de démarrage automatique par utilisateur (aucune élévation).
@@ -45,7 +46,18 @@ func Install(mode string, logger *log.Logger) error {
 	}
 
 	// Démarre tout de suite (la clé Run ne jouera qu'à la prochaine session).
-	if err := exec.Command(bin, mode).Start(); err != nil {
+	// DETACHED_PROCESS est indispensable : lancé en simple enfant, le tray
+	// hériterait de la console et son AttachConsole (console_windows.go) le
+	// rattacherait à la fenêtre PowerShell — fermer le terminal le tuerait
+	// (CTRL_CLOSE), observé au premier install Windows réel. Détaché, il n'a
+	// aucune console parente et survit à la fermeture du terminal.
+	const detachedProcess = 0x00000008
+	const createNewProcessGroup = 0x00000200
+	cmd := exec.Command(bin, mode)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: detachedProcess | createNewProcessGroup,
+	}
+	if err := cmd.Start(); err != nil {
 		logger.Printf("démarrage immédiat impossible (%v) — il démarrera à la prochaine session", err)
 	}
 

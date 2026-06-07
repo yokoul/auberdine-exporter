@@ -7,8 +7,15 @@
 # automatique (clé Run utilisateur, aucune élévation). Invoke-WebRequest
 # ne pose pas le Mark-of-the-Web : aucune alerte SmartScreen à ignorer.
 #
+# Aucune élévation requise : tout vit dans le profil utilisateur (clé Run
+# HKCU + %LOCALAPPDATA%). Inutile de lancer PowerShell en administrateur.
+#
 # Source : https://github.com/yokoul/auberdine-exporter (uploader/scripts/)
 $ErrorActionPreference = 'Stop'
+
+# Consoles héritées en page de code OEM : on bascule l'affichage en UTF-8
+# pour que les messages accentués (script + binaire) restent lisibles.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 $repo  = 'yokoul/auberdine-exporter'
 $asset = 'auberdine-uploader-windows-amd64.exe'
@@ -39,3 +46,4 @@ Remove-Item $tmp -ErrorAction SilentlyContinue
 Write-Host ''
 Write-Host 'Auberdine Uploader est installé : vos exports partiront tout seuls'
 Write-Host 'à la prochaine déconnexion en jeu. L''icône vit dans la zone de notification.'
+Write-Host 'Vous pouvez fermer cette fenêtre — l''uploader continue en arrière-plan.'

@@ -27,6 +27,10 @@ func init() {
 	if r == 0 {
 		return // pas de console parente : démarrage de session, tray silencieux
 	}
+	// Les consoles Windows héritées tournent en page de code OEM (850/437) :
+	// nos messages UTF-8 y affichent des accents cassés. On bascule la
+	// console en UTF-8 (65001) — mojibake observé au premier install réel.
+	kernel32.NewProc("SetConsoleOutputCP").Call(65001)
 	if f, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
 		os.Stdout = f
 		os.Stderr = f
