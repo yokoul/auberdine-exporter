@@ -188,22 +188,26 @@ end
 local function HarvestWho()
     if not CensusSettings().enabled then return end
     local num = (C_FriendList and C_FriendList.GetNumWhoResults and C_FriendList.GetNumWhoResults()) or 0
+    if num == 0 then return end
     local faction = FactionToken("player")  -- /who ne renvoie que SA faction
+    local fresh = 0
     for i = 1, num do
         local info = C_FriendList and C_FriendList.GetWhoInfo and C_FriendList.GetWhoInfo(i)
         if info and info.fullName then
             local guild = info.fullGuildName
             if guild == "" then guild = nil end
-            RecordPlayer(info.fullName, {
+            if RecordPlayer(info.fullName, {
                 level   = tonumber(info.level),
                 class   = info.classStr,
                 race    = info.raceStr,
                 faction = faction,
                 zone    = info.area,
                 guild   = guild,
-            })
+            }) then fresh = fresh + 1 end
         end
     end
+    CensusPrint(string.format("/who relevé : %d résultat(s), %d nouvelle(s) — %d âmes connues.",
+        num, fresh, CountPlayers(EnsureDB())))
 end
 
 -- ===================== Export (consommé par ExportToJSON) =====================
