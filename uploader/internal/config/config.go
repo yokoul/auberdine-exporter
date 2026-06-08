@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DefaultEndpoint est la base de l'API d'ingestion auberdine.eu.
@@ -56,35 +57,64 @@ func Default() Config {
 	}
 }
 
-// Path renvoie le chemin du fichier de configuration.
+// profileSuffix renvoie le suffixe de fichier selon AUBERDINE_PROFILE, pour
+// isoler des configurations indépendantes (prod vs dev), chacune avec son
+// propre endpoint et sa propre clé API. Vide / "prod" / "production" /
+// "default" → config.json. Tout autre nom → config.<profil>.json
+// (ex. AUBERDINE_PROFILE=dev → config.dev.json).
+func profileSuffix() string {
+	p := strings.ToLower(strings.TrimSpace(os.Getenv("AUBERDINE_PROFILE")))
+	switch p {
+	case "", "prod", "production", "default":
+		return ""
+	default:
+		// On garde le nom tel que saisi (minuscules), nettoyé des séparateurs
+		// de chemin pour éviter toute évasion de répertoire.
+		safe := strings.NewReplacer("/", "", "\\", "", "..", "").Replace(p)
+		return "." + safe
+	}
+}
+
+// Profile renvoie le nom du profil actif ("prod" par défaut).
+func Profile() string {
+	if s := profileSuffix(); s != "" {
+		return strings.TrimPrefix(s, ".")
+	}
+	return "prod"
+}
+
+// Path renvoie le chemin du fichier de configuration du profil courant.
 func Path() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "auberdine-uploader", "config.json"), nil
+	return filepath.Join(dir, "auberdine-uploader", "config"+profileSuffix()+".json"), nil
 }
 
-// Load lit la configuration depuis le disque. Si le fichier n'existe pas, les
-// valeurs par défaut sont renvoyées sans erreur.
+// Load lit la configuration du profil courant depuis le disque. Si le fichier
+// n'existe pas, les valeurs par défaut sont renvoyées sans erreur. La variable
+// AUBERDINE_ENDPOINT surcharge l'endpoint (pratique pour pointer un dev local
+// sans éditer le fichier ; persistée au prochain `connect`).
 func Load() (Config, error) {
 	p, err := Path()
 	if err != nil {
 		return Config{}, err
 	}
-	data, err := os.ReadFile(p)
-	if errors.Is(err, os.ErrNotExist) {
-		return Default(), nil
-	}
-	if err != nil {
-		return Config{}, err
-	}
 	cfg := Default()
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	data, err := os.ReadFile(p)
+	if err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return Config{}, err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return Config{}, err
 	}
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = DefaultEndpoint
+	}
+	if ep := strings.TrimSpace(os.Getenv("AUBERDINE_ENDPOINT")); ep != "" {
+		cfg.Endpoint = ep
 	}
 	return cfg, nil
 }

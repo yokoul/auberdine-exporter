@@ -103,6 +103,35 @@ relancer `connect` (révoque l'ancienne — un seul client actif par compte).
 L'état technique (hashs de dédup, runs déjà transmis) est stocké séparément dans
 le répertoire de cache utilisateur (surchargeable via `AUBERDINE_UPLOADER_STATE_DIR`).
 
+### Profils prod / dev
+
+La clé d'ingestion est **liée à un environnement** : une clé prod n'authentifie
+pas sur dev et inversement. Pour basculer facilement, utilisez des **profils**,
+chacun avec son propre fichier config (endpoint + clé) :
+
+- `AUBERDINE_PROFILE` choisit le profil → fichier `config.<profil>.json`.
+  Vide / `prod` / `production` → `config.json` (défaut).
+- `AUBERDINE_ENDPOINT` surcharge l'endpoint au vol (persisté au prochain
+  `connect`) — pratique pour pointer un dev local sans éditer le fichier.
+
+```bash
+# Prod (profil par défaut) — une fois :
+AUBERDINE_ENDPOINT=https://auberdine.eu auberdine-uploader connect
+auberdine-uploader daemon            # ou le service installé
+
+# Dev local — une fois :
+AUBERDINE_PROFILE=dev AUBERDINE_ENDPOINT=http://localhost:3000 auberdine-uploader connect
+AUBERDINE_PROFILE=dev auberdine-uploader daemon
+
+# Vérifier le profil/endpoint actif :
+auberdine-uploader status
+AUBERDINE_PROFILE=dev auberdine-uploader status
+```
+
+Astuce : le **service installé** (`install`) tourne sur le profil par défaut
+(prod). Gardez le dev pour un lancement manuel en terminal avec
+`AUBERDINE_PROFILE=dev` — séparation nette prod (toujours actif) / dev (ponctuel).
+
 ## Structure
 
 | Paquet | Rôle |

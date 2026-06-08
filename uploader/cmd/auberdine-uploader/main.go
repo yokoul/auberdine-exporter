@@ -185,6 +185,7 @@ func runUpdate(cfg config.Config) {
 
 func runStatus(cfg config.Config) {
 	p, _ := config.Path()
+	fmt.Printf("Profil        : %s\n", config.Profile())
 	fmt.Printf("Config        : %s\n", p)
 	fmt.Printf("Endpoint      : %s\n", orNone(cfg.Endpoint))
 	fmt.Printf("Exports       : %v\n", cfg.UploadExports)
