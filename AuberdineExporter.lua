@@ -1969,6 +1969,15 @@ function ExportToJSON()
         end
     end
 
+    -- NOUVEAU v1.7.1: Recensement du royaume (opt-in /who). Voyage dans le même
+    -- export signé que les personnages ; le serveur le traite en side-channel.
+    if AuberdineExporter.Census and AuberdineExporter.Census.GetExportData then
+        local censusData = AuberdineExporter.Census:GetExportData()
+        if censusData and censusData.players and #censusData.players > 0 then
+            exportData.census = censusData
+        end
+    end
+
     -- Fonction de conversion JSON améliorée avec échappement complet
     local function escapeJSON(s)
         s = string.gsub(s, "\\", "\\\\")

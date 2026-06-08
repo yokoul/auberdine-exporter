@@ -807,6 +807,41 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     end)
     yOffset = yOffset - 40
 
+    -- ===== Section Recensement du royaume (opt-in) =====
+    local Census = AuberdineExporter and AuberdineExporter.Census
+    local csettings = Census and Census:GetSettings() or { enabled = false }
+
+    local censusTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    censusTitle:SetPoint("TOPLEFT", 10, yOffset)
+    censusTitle:SetText("Recensement du royaume")
+    censusTitle:SetTextColor(0.4, 0.8, 1)
+    yOffset = yOffset - 26
+
+    local censusHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    censusHint:SetPoint("TOPLEFT", 12, yOffset)
+    censusHint:SetWidth(440)
+    censusHint:SetJustifyH("LEFT")
+    censusHint:SetText("Facultatif : aidez à recenser la population via /who (votre faction uniquement). Balayage discret en fond, une fois par heure.")
+    yOffset = yOffset - 34
+
+    local censusEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    censusEnableCheck:SetPoint("TOPLEFT", 10, yOffset)
+    censusEnableCheck:SetChecked(csettings.enabled)
+    censusEnableCheck.text:SetText("Participer au recensement de la population")
+    censusEnableCheck:SetScript("OnClick", function(self)
+        if Census then Census:GetSettings().enabled = self:GetChecked() and true or false end
+    end)
+    yOffset = yOffset - 30
+
+    local censusScanBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    censusScanBtn:SetPoint("TOPLEFT", 20, yOffset)
+    censusScanBtn:SetSize(200, 22)
+    censusScanBtn:SetText("Scanner maintenant")
+    censusScanBtn:SetScript("OnClick", function()
+        if Census then Census:StartSweep(true) end
+    end)
+    yOffset = yOffset - 40
+
     -- Reset button
     local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     resetBtn:SetPoint("TOPLEFT", 10, yOffset)
