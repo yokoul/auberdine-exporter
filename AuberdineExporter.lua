@@ -395,6 +395,14 @@ local function InitializeCharacterData()
         -- Character initialization message disabled for cleaner experience
         -- print("|cff00ff00AuberdineExporter:|r Personnage " .. UnitName("player") .. " initialisé (locale: " .. locale .. ")")
     else
+        -- Rafraîchir les infos de base à chaque init — le niveau (et le nom en cas
+        -- de renommage) évoluent ; ne les capter qu'au premier scan figeait la
+        -- donnée (ex. perso scanné à 25, monté à 30, exporté éternellement à 25).
+        AuberdineExporterDB.characters[charKey].name = UnitName("player")
+        AuberdineExporterDB.characters[charKey].level = UnitLevel("player")
+        AuberdineExporterDB.characters[charKey].class = UnitClass("player")
+        AuberdineExporterDB.characters[charKey].race = UnitRace("player")
+        AuberdineExporterDB.characters[charKey].guid = UnitGUID("player")
         -- Mettre à jour skills/réputations/equipment/talents à chaque init
         AuberdineExporterDB.characters[charKey].skills = GetCharacterSkills()
         AuberdineExporterDB.characters[charKey].reputations = GetCharacterReputations()
