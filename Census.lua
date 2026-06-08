@@ -76,6 +76,14 @@ local function StripRealm(name)
     return name:match("^([^%-]+)") or name
 end
 
+-- True si le royaume fourni est un AUTRE royaume que le nôtre. En BG cross-realm
+-- on croise des joueurs d'autres serveurs : on ne recense QUE notre royaume,
+-- sinon le registre Auberdine se pollue (et un homonyme étranger écraserait un
+-- local après StripRealm).
+local function IsForeignRealm(realm)
+    return realm ~= nil and realm ~= "" and realm ~= GetRealmName()
+end
+
 local function FactionToken(unit)
     local f = UnitFactionGroup(unit)
     if f == "Alliance" then return "ALLIANCE" end
@@ -119,8 +127,9 @@ local function CaptureUnit(unit)
     if not UnitIsPlayer(unit) then return false end
     if UnitIsUnit(unit, "player") then return false end  -- soi-même
 
-    local name = UnitName(unit)
+    local name, realm = UnitName(unit)
     if not name or name == "" or name == UNKNOWNOBJECT then return false end
+    if IsForeignRealm(realm) then return false end  -- BG cross-realm : autre royaume
 
     local lvl = UnitLevel(unit)
     if not lvl or lvl < 1 then lvl = nil end
@@ -193,7 +202,13 @@ local function HarvestWho()
     local fresh = 0
     for i = 1, num do
         local info = C_FriendList and C_FriendList.GetWhoInfo and C_FriendList.GetWhoInfo(i)
+        -- info.fullName peut être "Nom-Royaume" → on écarte les autres royaumes.
+        local foreign = false
         if info and info.fullName then
+            local r = info.fullName:match("%-(.+)$")
+            foreign = IsForeignRealm(r)
+        end
+        if info and info.fullName and not foreign then
             local guild = info.fullGuildName
             if guild == "" then guild = nil end
             if RecordPlayer(info.fullName, {
