@@ -821,7 +821,7 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     censusHint:SetPoint("TOPLEFT", 12, yOffset)
     censusHint:SetWidth(440)
     censusHint:SetJustifyH("LEFT")
-    censusHint:SetText("Facultatif : aidez à recenser la population via /who (votre faction uniquement). Balayage discret en fond, une fois par heure.")
+    censusHint:SetText("Facultatif : aidez à recenser la population. Capte passivement les joueurs croisés (plaques de nom, cible, groupe) — alliés et adversaires. Aucun /who automatique.")
     yOffset = yOffset - 34
 
     local censusEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
@@ -836,9 +836,9 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     local censusScanBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     censusScanBtn:SetPoint("TOPLEFT", 20, yOffset)
     censusScanBtn:SetSize(200, 22)
-    censusScanBtn:SetText("Scanner maintenant")
+    censusScanBtn:SetText("Recenser les alentours")
     censusScanBtn:SetScript("OnClick", function()
-        if Census then Census:StartSweep(true) end
+        if Census then Census:ScanNow() end
     end)
     yOffset = yOffset - 40
 

@@ -1,19 +1,24 @@
 -- AuberdineExporter - Recensement du royaume (census)
 --
--- Balaye la population visible via /who et accumule les joueurs vus
--- (nom, niveau, classe, race, faction, zone, guilde) pour transmission
--- communautaire à Auberdine.eu. Inspiré de CensusPlus (vanilla).
+-- Accumule les joueurs CROISÉS en jeu (nom, niveau, classe, race, faction,
+-- zone, guilde) pour transmission communautaire à Auberdine.eu.
 --
--- OPT-IN : désactivé par défaut. C'est une contribution facultative — chacun
--- peut aider à recenser la population du royaume s'il le souhaite.
+-- OPT-IN : désactivé par défaut. Contribution facultative — chacun peut aider
+-- à recenser la population du royaume s'il le souhaite.
 --
--- Contraintes /who :
---   * ne voit que SA propre faction (un scan Alliance ne voit que l'Alliance) ;
---   * plafonne à ~50 résultats par requête.
--- Stratégie : balayage par CLASSE, subdivisé par TRANCHE DE NIVEAU si une
--- classe sature. Tâche de fond throttlée, relancée chaque heure pour varier
--- les fenêtres horaires. Les données voyagent dans l'export perso signé
--- (clé top-level `census`), écrit au logout — aucun canal séparé.
+-- ┌─ Pourquoi pas /who ? ────────────────────────────────────────────────────┐
+-- │ C_FriendList.SendWho() est une fonction PROTÉGÉE dans le client Classic   │
+-- │ Era : un addon ne peut pas la déclencher (anti-spam recensement). On      │
+-- │ passe donc par la CAPTURE PASSIVE par rencontre, qui ne touche aucune     │
+-- │ fonction protégée :                                                       │
+-- │   * plaques de nom (nameplates) — tout ce qui s'affiche autour de vous ;  │
+-- │   * cible, survol (mouseover), membres de groupe/raid ;                   │
+-- │   * résultats d'un /who que VOUS lancez (on lit, on n'appelle jamais).    │
+-- │ Avantage inattendu : capte aussi la faction adverse (nameplates ennemis). │
+-- └──────────────────────────────────────────────────────────────────────────┘
+--
+-- Les données voyagent dans l'export perso signé (clé top-level `census`),
+-- écrit au logout — aucun canal séparé, aucun changement du client Go.
 
 AuberdineExporter = AuberdineExporter or {}
 local Census = {}
@@ -21,29 +26,12 @@ AuberdineExporter.Census = Census
 
 -- ===================== Configuration =====================
 
-local WHO_THROTTLE        = 3            -- secondes min entre deux requêtes /who
-local SATURATION          = 49          -- au-delà → subdivision (plafond serveur ~50)
-local FULL_SWEEP_INTERVAL = 3600        -- balayage complet toutes les heures
-local INITIAL_DELAY       = 30          -- délai après login avant le 1er balayage
-local PRUNE_AFTER         = 14 * 24 * 3600  -- oubli des âmes vues il y a +14 jours
-
--- Classes Classic — libellés FR (le client français renvoie le localisé dans
--- /who, et le filtre c-"..." accepte ce même libellé).
-local CLASSES = {
-    "Guerrier", "Paladin", "Chasseur", "Voleur", "Prêtre",
-    "Chaman", "Mage", "Démoniste", "Druide",
-}
-
--- Tranches de niveau pour subdivision quand une classe sature.
-local LEVEL_BANDS = { {1,9}, {10,19}, {20,29}, {30,39}, {40,49}, {50,59}, {60,60} }
+local SWEEP_INTERVAL = 60               -- balayage des unités visibles toutes les 60s
+local PRUNE_AFTER    = 14 * 24 * 3600   -- oubli des âmes vues il y a +14 jours
 
 -- ===================== État interne =====================
 
-local queue          = {}      -- file de requêtes { class = "...", band = {min,max} | nil }
-local currentItem    = nil
-local sweeping       = false
-local awaitingResult = false
-local started        = false
+local started = false
 
 -- ===================== Réglages (lazy init) =====================
 
@@ -88,19 +76,11 @@ local function StripRealm(name)
     return name:match("^([^%-]+)") or name
 end
 
-local function PlayerFaction()
-    local f = UnitFactionGroup("player")
+local function FactionToken(unit)
+    local f = UnitFactionGroup(unit)
     if f == "Alliance" then return "ALLIANCE" end
     if f == "Horde" then return "HORDE" end
     return nil
-end
-
-local function BuildFilter(item)
-    local filter = 'c-"' .. item.class .. '"'
-    if item.band then
-        filter = filter .. " " .. item.band[1] .. "-" .. item.band[2]
-    end
-    return filter
 end
 
 local function CountPlayers(db)
@@ -109,114 +89,121 @@ local function CountPlayers(db)
     return n
 end
 
--- ===================== Moteur de balayage =====================
+-- ===================== Capture =====================
 
-local function RecordPlayer(info, faction)
-    local name = StripRealm(info.fullName)
-    if not name or name == "" then return end
-    local lvl = tonumber(info.level) or 0
-    if lvl < 1 then return end
+local function RecordPlayer(name, data)
+    name = StripRealm(name)
+    if not name or name == "" then return false end
 
-    local guild = info.fullGuildName
-    if guild == "" then guild = nil end
+    local db = EnsureDB()
+    local prev = db.players[name]
+    -- Niveau : UnitLevel renvoie -1 pour une unité « ?? » (trop loin/haut).
+    -- On conserve alors le dernier niveau connu plutôt que de l'écraser.
+    local level = data.level
+    if (not level or level < 1) and prev then level = prev.level end
 
-    EnsureDB().players[name] = {
-        level   = lvl,
-        class   = info.classStr,
-        race    = info.raceStr,
-        faction = faction,
-        zone    = info.area,
-        guild   = guild,
+    db.players[name] = {
+        level   = level,
+        class   = data.class or (prev and prev.class) or nil,
+        race    = data.race or (prev and prev.race) or nil,
+        faction = data.faction or (prev and prev.faction) or nil,
+        zone    = data.zone or (prev and prev.zone) or nil,
+        guild   = data.guild or (prev and prev.guild) or nil,
         seenAt  = time(),
     }
+    return prev == nil
 end
 
-local function ProcessNext()
-    local item = table.remove(queue, 1)
-    if not item then
-        sweeping = false
-        currentItem = nil
-        CensusPrint("balayage terminé — " .. CountPlayers(EnsureDB()) .. " âmes connues.")
-        return
-    end
+local function CaptureUnit(unit)
+    if not unit or not UnitExists(unit) then return false end
+    if not UnitIsPlayer(unit) then return false end
+    if UnitIsUnit(unit, "player") then return false end  -- soi-même
 
-    currentItem = item
-    awaitingResult = true
-    local filter = BuildFilter(item)
+    local name = UnitName(unit)
+    if not name or name == "" or name == UNKNOWNOBJECT then return false end
 
-    -- SetWhoToUI(false) : on ne veut pas faire surgir la fenêtre Qui à chaque
-    -- requête. Les résultats restent lisibles via WHO_LIST_UPDATE + GetWhoInfo.
-    if C_FriendList and C_FriendList.SetWhoToUI then C_FriendList.SetWhoToUI(false) end
+    local lvl = UnitLevel(unit)
+    if not lvl or lvl < 1 then lvl = nil end
+    local locClass = UnitClass(unit)
+    local locRace  = UnitRace(unit)
+    local zone = GetRealZoneText()
+    if not zone or zone == "" then zone = GetZoneText() end
 
-    if C_FriendList and C_FriendList.SendWho then
-        C_FriendList.SendWho(filter)
-    else
-        -- API indisponible → on abandonne proprement le balayage.
-        sweeping = false
-        currentItem = nil
-        awaitingResult = false
-    end
+    return RecordPlayer(name, {
+        level   = lvl,
+        class   = locClass,
+        race    = locRace,
+        faction = FactionToken(unit),
+        zone    = zone,
+        guild   = GetGuildInfo(unit),  -- nil hors guilde
+    })
 end
 
-local function OnWhoResult()
-    if not sweeping or not currentItem or not awaitingResult then return end
-    awaitingResult = false
+-- Balaye toutes les unités actuellement visibles : nameplates + groupe/raid +
+-- cible + survol. Purement local, aucun appel protégé.
+local function SweepVisible()
+    if not CensusSettings().enabled then return 0 end
+    local fresh = 0
 
-    local faction = PlayerFaction()
-    local num = (C_FriendList and C_FriendList.GetNumWhoResults and C_FriendList.GetNumWhoResults()) or 0
-    for i = 1, num do
-        local info = C_FriendList and C_FriendList.GetWhoInfo and C_FriendList.GetWhoInfo(i)
-        if info and info.fullName then RecordPlayer(info, faction) end
-    end
-
-    -- Subdivision si saturation : classe entière → par tranche de niveau.
-    if num >= SATURATION then
-        if not currentItem.band then
-            for _, b in ipairs(LEVEL_BANDS) do
-                queue[#queue + 1] = { class = currentItem.class, band = b }
-            end
-        else
-            -- Une tranche fine reste saturée : recensement partiel assumé (pas
-            -- de cap silencieux — on le signale).
-            CensusPrint("tranche saturée (" .. num .. "+), recensement partiel : " .. BuildFilter(currentItem))
+    -- Plaques de nom (tout ce qui s'affiche autour, alliés ET ennemis).
+    if C_NamePlate and C_NamePlate.GetNamePlates then
+        for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+            local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+            if unit and CaptureUnit(unit) then fresh = fresh + 1 end
         end
     end
 
-    if C_Timer and C_Timer.After then
-        C_Timer.After(WHO_THROTTLE, ProcessNext)
-    else
-        ProcessNext()
+    -- Membres du groupe / raid.
+    local n = GetNumGroupMembers and GetNumGroupMembers() or 0
+    if n > 0 then
+        local prefix = (IsInRaid and IsInRaid()) and "raid" or "party"
+        for i = 1, n do
+            if CaptureUnit(prefix .. i) then fresh = fresh + 1 end
+        end
     end
+
+    if CaptureUnit("target") then fresh = fresh + 1 end
+    if CaptureUnit("mouseover") then fresh = fresh + 1 end
+
+    EnsureDB().lastSweep = time()
+    return fresh
 end
 
--- Lance un balayage complet du royaume (une requête /who par classe au départ).
--- `manual` force le scan même si l'auto-balayage est en pause (mais jamais si
--- l'opt-in global est désactivé).
-function Census:StartSweep(manual)
+-- Balayage manuel (bouton « Recenser les alentours »).
+function Census:ScanNow()
     if not IsValidRealm() then
-        if manual then CensusPrint("indisponible hors du royaume Auberdine.") end
+        CensusPrint("indisponible hors du royaume Auberdine.")
         return
     end
     if not CensusSettings().enabled then
-        if manual then CensusPrint("recensement désactivé (activez-le dans les réglages).") end
+        CensusPrint("recensement désactivé (activez-le dans les réglages).")
         return
     end
-    if sweeping then
-        if manual then CensusPrint("un balayage est déjà en cours.") end
-        return
-    end
+    local fresh = SweepVisible()
+    CensusPrint(fresh .. " nouvelle(s) âme(s) aux alentours — " .. CountPlayers(EnsureDB()) .. " connues au total.")
+end
 
-    local faction = PlayerFaction()
-    if not faction then return end
-
-    sweeping = true
-    queue = {}
-    for _, cls in ipairs(CLASSES) do
-        queue[#queue + 1] = { class = cls }
+-- Harvest des résultats d'un /who lancé par le joueur (lecture seule : on
+-- n'appelle JAMAIS SendWho, on lit juste ce que le client expose).
+local function HarvestWho()
+    if not CensusSettings().enabled then return end
+    local num = (C_FriendList and C_FriendList.GetNumWhoResults and C_FriendList.GetNumWhoResults()) or 0
+    local faction = FactionToken("player")  -- /who ne renvoie que SA faction
+    for i = 1, num do
+        local info = C_FriendList and C_FriendList.GetWhoInfo and C_FriendList.GetWhoInfo(i)
+        if info and info.fullName then
+            local guild = info.fullGuildName
+            if guild == "" then guild = nil end
+            RecordPlayer(info.fullName, {
+                level   = tonumber(info.level),
+                class   = info.classStr,
+                race    = info.raceStr,
+                faction = faction,
+                zone    = info.area,
+                guild   = guild,
+            })
+        end
     end
-    EnsureDB().lastSweep = time()
-    CensusPrint("balayage du royaume démarré (" .. faction .. ", faction visible uniquement)…")
-    ProcessNext()
 end
 
 -- ===================== Export (consommé par ExportToJSON) =====================
@@ -245,7 +232,7 @@ function Census:GetExportData()
     end
 
     return {
-        scannerFaction = PlayerFaction(),
+        scannerFaction = FactionToken("player"),
         scannedAt      = db.lastSweep or now,
         players        = players,
     }
@@ -259,14 +246,10 @@ local function StartCensus()
     started = true
     EnsureDB()
 
-    if C_Timer and C_Timer.After then
-        C_Timer.After(INITIAL_DELAY, function()
-            if CensusSettings().enabled then Census:StartSweep(false) end
-        end)
-    end
+    -- Balayage périodique des unités visibles (passif, non protégé).
     if C_Timer and C_Timer.NewTicker then
-        C_Timer.NewTicker(FULL_SWEEP_INTERVAL, function()
-            if CensusSettings().enabled then Census:StartSweep(false) end
+        C_Timer.NewTicker(SWEEP_INTERVAL, function()
+            if CensusSettings().enabled then SweepVisible() end
         end)
     end
 end
@@ -274,12 +257,26 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+frame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+frame:RegisterEvent("GROUP_ROSTER_UPDATE")
 frame:RegisterEvent("WHO_LIST_UPDATE")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         StartCensus()
+    elseif not CensusSettings().enabled then
+        return
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        CaptureUnit("target")
+    elseif event == "UPDATE_MOUSEOVER_UNIT" then
+        CaptureUnit("mouseover")
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+        CaptureUnit((...))
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        SweepVisible()
     elseif event == "WHO_LIST_UPDATE" then
-        OnWhoResult()
+        HarvestWho()
     end
 end)
