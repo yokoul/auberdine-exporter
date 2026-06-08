@@ -19,6 +19,7 @@ echo "📁 Copie des fichiers essentiels..."
 # Fichiers principaux
 cp "AuberdineExporter.lua" "$RELEASE_DIR/"
 cp "GuildTracker.lua" "$RELEASE_DIR/"
+cp "Census.lua" "$RELEASE_DIR/"
 cp "DungeonLogger.lua" "$RELEASE_DIR/"
 cp "AuberdineExporter.toc" "$RELEASE_DIR/"
 cp "LICENSE" "$RELEASE_DIR/"
