@@ -88,6 +88,14 @@ func (a *App) Endpoint() string {
 	return a.cfg.Endpoint
 }
 
+// dedupKey namespace une clé de dédup (fichier d'export ou run de donjon) par
+// endpoint, pour que les envois vers dev et prod soient suivis SÉPARÉMENT. Sans
+// ça, un payload déjà transmis à un environnement est considéré « déjà envoyé »
+// pour l'autre (un seul state.json partagé) → jamais ré-uploadé après bascule.
+func (a *App) dedupKey(s string) string {
+	return a.Endpoint() + "|" + s
+}
+
 // SetAPIKey enregistre la clé d'ingestion obtenue par la connexion et persiste.
 func (a *App) SetAPIKey(key string) error {
 	a.mu.Lock()
@@ -289,7 +297,7 @@ func (a *App) processExport(ctx context.Context, svPath string) error {
 
 	sum := sha256.Sum256([]byte(payload))
 	hash := hex.EncodeToString(sum[:])
-	if hash == a.state.lastExportHash(svPath) {
+	if hash == a.state.lastExportHash(a.dedupKey(svPath)) {
 		return nil // inchangé : dédup
 	}
 
@@ -300,12 +308,12 @@ func (a *App) processExport(ctx context.Context, svPath string) error {
 			// à l'identique à chaque cycle. On mémorise le hash pour ne réessayer
 			// qu'au prochain export régénéré par l'addon.
 			a.logger.Printf("export %s rejeté (définitif), ignoré jusqu'au prochain export : %v", svPath, err)
-			return a.state.setExportHash(svPath, hash)
+			return a.state.setExportHash(a.dedupKey(svPath), hash)
 		}
 		return err // transitoire : on réessaiera au prochain cycle
 	}
 	a.logger.Printf("export transmis depuis %s (%d personnage(s))", svPath, res.Processed)
-	return a.state.setExportHash(svPath, hash)
+	return a.state.setExportHash(a.dedupKey(svPath), hash)
 }
 
 // processDungeonLogs consomme le manifeste de runs publié par l'addon et
@@ -319,7 +327,7 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 	}
 	year := time.Now().Year()
 	for _, r := range runs {
-		if r.Status != "complete" || a.state.runSent(r.ID) {
+		if r.Status != "complete" || a.state.runSent(a.dedupKey(r.ID)) {
 			continue
 		}
 		// Délai de grâce : le client WoW écrit son log par blocs bufferisés.
@@ -338,7 +346,7 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 			discovery.ListCombatLogs(a.paths.LogsDir), r.StartedAt, r.EndedAt)
 		if len(candidates) == 0 {
 			a.logger.Printf("run %s : aucun log de combat ne couvre la fenêtre, ignoré", r.ID)
-			a.state.markRunSent(r.ID)
+			a.state.markRunSent(a.dedupKey(r.ID))
 			continue
 		}
 		var (
@@ -378,7 +386,7 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 		}
 		if len(segment) == 0 {
 			a.logger.Printf("run %s : segment vide, ignoré", r.ID)
-			a.state.markRunSent(r.ID)
+			a.state.markRunSent(a.dedupKey(r.ID))
 			continue
 		}
 		name, realm := splitCharacter(r.Character)
@@ -395,7 +403,7 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 			if upload.IsDefinitive(err) {
 				// Segment refusé (ex. format invalide) : ne pas retenter à l'identique.
 				a.logger.Printf("run %s rejeté (définitif), ignoré : %v", r.ID, err)
-				a.state.markRunSent(r.ID)
+				a.state.markRunSent(a.dedupKey(r.ID))
 				continue
 			}
 			a.logger.Printf("run %s : envoi : %v", r.ID, err)
@@ -406,7 +414,7 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 		} else {
 			a.logger.Printf("run donjon transmis : %s (%s, %d octets, upload #%d)", r.ID, r.Instance, len(segment), res.UploadID)
 		}
-		if err := a.state.markRunSent(r.ID); err != nil {
+		if err := a.state.markRunSent(a.dedupKey(r.ID)); err != nil {
 			return err
 		}
 	}
