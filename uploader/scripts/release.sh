@@ -30,8 +30,16 @@ rm -rf "$DIST" && mkdir -p "$DIST"
 build() { # build GOOS GOARCH CGO sortie
     local goos="$1" goarch="$2" cgo="$3" out="$4"
     echo "-> $out"
+    # Windows : sous-système GUI obligatoire (-H windowsgui). Sans lui le PE
+    # reste en sous-système console et Windows alloue une fenêtre console à
+    # tout démarrage sans console parente — clé Run à l'ouverture de session
+    # ET surtout relance détachée du self-update (restart_windows.go), d'où
+    # un terminal fantôme persistant au milieu de l'écran. console_windows.go
+    # suppose précisément ce flag pour son AttachConsole conditionnel.
+    local ldflags="$LDFLAGS"
+    [ "$goos" = windows ] && ldflags="$ldflags -H windowsgui"
     CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
-        go build -tags tray -trimpath -ldflags "$LDFLAGS" \
+        go build -tags tray -trimpath -ldflags "$ldflags" \
         -o "$DIST/$out" ./cmd/auberdine-uploader
 }
 
