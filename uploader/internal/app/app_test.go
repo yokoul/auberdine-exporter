@@ -203,3 +203,41 @@ func TestDungeonManifestDrivesUpload(t *testing.T) {
 		t.Fatalf("dédup run ratée: %d envois", len(up.runs))
 	}
 }
+
+func TestGroupTwinRuns(t *testing.T) {
+	now := int64(10_000)
+	runs := []manifestRun{
+		// Session 1 : deux jumeaux dual-box du même donjon, fenêtres décalées.
+		{ID: "a", InstanceID: 189, StartedAt: 1000, EndedAt: 2000, Status: "complete"},
+		{ID: "b", InstanceID: 189, StartedAt: 1004, EndedAt: 1990, Status: "complete"},
+		// Session 2 : reset suivant (pas de chevauchement) → groupe distinct.
+		{ID: "c", InstanceID: 189, StartedAt: 2500, EndedAt: 3200, Status: "complete"},
+		// Autre instance au même moment → jamais regroupée.
+		{ID: "d", InstanceID: 36, StartedAt: 1100, EndedAt: 1900, Status: "complete"},
+	}
+	groups := groupTwinRuns(runs, now)
+	if len(groups) != 3 {
+		t.Fatalf("3 groupes attendus, %d obtenus", len(groups))
+	}
+	byFirst := map[string]int{}
+	for _, g := range groups {
+		byFirst[g[0].ID] = len(g)
+	}
+	if byFirst["a"] != 2 {
+		t.Errorf("jumeaux a+b non regroupés: %+v", byFirst)
+	}
+	if byFirst["c"] != 1 || byFirst["d"] != 1 {
+		t.Errorf("reset/instance distincte regroupés à tort: %+v", byFirst)
+	}
+
+	// Un jumeau in_progress occupe sa fenêtre jusqu'à maintenant : il agrège
+	// le run complet qui démarre après lui (la session n'est pas close).
+	open := []manifestRun{
+		{ID: "x", InstanceID: 189, StartedAt: 1000, EndedAt: 0, Status: "in_progress"},
+		{ID: "y", InstanceID: 189, StartedAt: 5000, EndedAt: 6000, Status: "complete"},
+	}
+	g2 := groupTwinRuns(open, now)
+	if len(g2) != 1 || len(g2[0]) != 2 {
+		t.Fatalf("in_progress devrait agréger le run chevauchant: %+v", g2)
+	}
+}

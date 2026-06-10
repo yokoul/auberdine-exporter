@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -316,58 +317,133 @@ func (a *App) processExport(ctx context.Context, svPath string) error {
 	return a.state.setExportHash(a.dedupKey(svPath), hash)
 }
 
+// groupTwinRuns regroupe les runs « jumeaux » multi-comptes : même instance
+// (InstanceID) et fenêtres [StartedAt, EndedAt] qui se chevauchent = même
+// session vécue par plusieurs personnages de la machine. Deux resets
+// successifs d'une chaîne de boost ne se chevauchent jamais → jamais
+// regroupés à tort. Un run encore in_progress occupe sa fenêtre jusqu'à
+// maintenant (now) : il agrège — et donc DIFFÈRE — les jumeaux qui se
+// terminent pendant qu'il court. L'entrée doit être triée stable ; on trie
+// ici par (InstanceID, StartedAt).
+func groupTwinRuns(runs []manifestRun, now int64) [][]manifestRun {
+	sorted := append([]manifestRun(nil), runs...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].InstanceID != sorted[j].InstanceID {
+			return sorted[i].InstanceID < sorted[j].InstanceID
+		}
+		return sorted[i].StartedAt < sorted[j].StartedAt
+	})
+	var groups [][]manifestRun
+	var end int64
+	for _, r := range sorted {
+		rEnd := r.EndedAt
+		if r.Status != "complete" || rEnd == 0 {
+			rEnd = now
+		}
+		if n := len(groups); n > 0 && groups[n-1][0].InstanceID == r.InstanceID && r.StartedAt <= end {
+			groups[n-1] = append(groups[n-1], r)
+			if rEnd > end {
+				end = rEnd
+			}
+			continue
+		}
+		groups = append(groups, []manifestRun{r})
+		end = rEnd
+	}
+	return groups
+}
+
 // processDungeonLogs consomme le manifeste de runs publié par l'addon et
-// transmet, pour chaque run complet non encore envoyé, le segment correspondant
-// du log de combat. L'addon ne fournit que des timestamps ; le démon mappe la
-// fenêtre vers une plage de lignes du log.
+// transmet, pour chaque SESSION complète non encore envoyée, le segment
+// correspondant du log de combat. L'addon ne fournit que des timestamps ;
+// le démon mappe la fenêtre vers une plage de lignes du log. Les runs
+// jumeaux multi-comptes (fenêtres qui se chevauchent sur la même instance)
+// sont regroupés : UN envoi par session, fenêtre union des points de vue —
+// sans quoi chaque compte produisait son propre rapport côté serveur
+// (fenêtres décalées de quelques secondes → sha distincts).
 func (a *App) processDungeonLogs(ctx context.Context) error {
 	runs := a.collectManifestRuns()
 	if len(runs) == 0 {
 		return nil
 	}
 	year := time.Now().Year()
-	for _, r := range runs {
-		if r.Status != "complete" || a.state.runSent(a.dedupKey(r.ID)) {
+	for _, group := range groupTwinRuns(runs, time.Now().Unix()) {
+		// Jumeaux pas encore transmis (les autres l'ont déjà été).
+		pending := make([]manifestRun, 0, len(group))
+		for _, r := range group {
+			if !a.state.runSent(a.dedupKey(r.ID)) {
+				pending = append(pending, r)
+			}
+		}
+		if len(pending) == 0 {
 			continue
 		}
+		// La session n'est envoyée que close et mûrie pour TOUS ses jumeaux.
 		// Délai de grâce : le client WoW écrit son log par blocs bufferisés.
 		// Découper un run fraîchement clos peut tronquer le segment au
 		// milieu d'un bloc non encore flushé — cas réel : le UNIT_DIED du
 		// dernier boss (1 ms après son ENCOUNTER_END) absent du segment au
-		// Monastère, dev ET prod. On laisse le client finir d'écrire ; le
-		// run mûrira au prochain cycle de poll.
-		if time.Since(time.Unix(r.EndedAt, 0)) < flushGrace {
+		// Monastère, dev ET prod. La session mûrira au prochain cycle.
+		ready := true
+		for _, r := range group {
+			if r.Status != "complete" || time.Since(time.Unix(r.EndedAt, 0)) < flushGrace {
+				ready = false
+				break
+			}
+		}
+		if !ready {
 			continue
+		}
+		// Fenêtre UNION du groupe (couvre tous les points de vue) ; le
+		// run représentant (identité d'upload) est la fenêtre la plus large.
+		rep := pending[0]
+		start, end := rep.StartedAt, rep.EndedAt
+		for _, r := range pending[1:] {
+			if r.StartedAt < start {
+				start = r.StartedAt
+			}
+			if r.EndedAt > end {
+				end = r.EndedAt
+			}
+			if r.EndedAt-r.StartedAt > rep.EndedAt-rep.StartedAt {
+				rep = r
+			}
+		}
+		markAll := func() {
+			for _, r := range pending {
+				_ = a.state.markRunSent(a.dedupKey(r.ID))
+			}
+		}
+		twins := ""
+		if len(pending) > 1 {
+			twins = fmt.Sprintf(" (+%d jumeau(x) multi-compte regroupé(s))", len(pending)-1)
 		}
 		// Le client 1.15.8+ crée un log horodaté PAR session de logging :
 		// on liste à chaque passage et on ne retient que les fichiers dont
-		// la plage [SessionStart, ModTime] intersecte la fenêtre du run.
+		// la plage [SessionStart, ModTime] intersecte la fenêtre de session.
 		candidates := combatLogCandidates(
-			discovery.ListCombatLogs(a.paths.LogsDir), r.StartedAt, r.EndedAt)
+			discovery.ListCombatLogs(a.paths.LogsDir), start, end)
 		if len(candidates) == 0 {
-			a.logger.Printf("run %s : aucun log de combat ne couvre la fenêtre, ignoré", r.ID)
-			a.state.markRunSent(a.dedupKey(r.ID))
+			a.logger.Printf("run %s : aucun log de combat ne couvre la fenêtre, ignoré%s", rep.ID, twins)
+			markAll()
 			continue
 		}
 		var (
 			segment []byte
 			err     error
 		)
-		if r.ByteEnd > r.ByteStart {
+		if len(pending) == 1 && rep.ByteEnd > rep.ByteStart {
 			// Bornes octets explicites (override de test/debug) : appliquées
 			// au log le plus récent couvrant la fenêtre.
-			segment, err = readSegment(candidates[0], r.ByteStart, r.ByteEnd)
+			segment, err = readSegment(candidates[0], rep.ByteStart, rep.ByteEnd)
 		} else {
 			// Parmi les candidats, on retient le segment LE PLUS RICHE :
 			// en dual-box chaque client écrit son propre fichier, et les
 			// points de vue divergent (le combatlog ne porte que ce qui est
 			// à portée — un perso resté loin du boss produit un segment
-			// appauvri, cas réel observé au Monastère écarlate). Le choix
-			// par volume est déterministe pour une même machine, donc la
-			// dédup sha256 côté serveur continue d'absorber les manifestes
-			// jumeaux des comptes multiples.
+			// appauvri, cas réel observé au Monastère écarlate).
 			for _, p := range candidates {
-				seg, e := segmentByTime(p, r.StartedAt, r.EndedAt, year)
+				seg, e := segmentByTime(p, start, end, year)
 				if e != nil {
 					err = e
 					continue
@@ -381,42 +457,40 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 			}
 		}
 		if err != nil {
-			a.logger.Printf("run %s : lecture segment : %v", r.ID, err)
+			a.logger.Printf("run %s : lecture segment : %v", rep.ID, err)
 			continue
 		}
 		if len(segment) == 0 {
-			a.logger.Printf("run %s : segment vide, ignoré", r.ID)
-			a.state.markRunSent(a.dedupKey(r.ID))
+			a.logger.Printf("run %s : segment vide, ignoré%s", rep.ID, twins)
+			markAll()
 			continue
 		}
-		name, realm := splitCharacter(r.Character)
+		name, realm := splitCharacter(rep.Character)
 		meta := upload.CombatMeta{
 			Realm:        realm,
 			Uploader:     name,
-			InstanceName: r.Instance,
-			MapID:        r.InstanceID,
-			StartedAt:    r.StartedAt,
-			EndedAt:      r.EndedAt,
+			InstanceName: rep.Instance,
+			MapID:        rep.InstanceID,
+			StartedAt:    start,
+			EndedAt:      end,
 		}
 		res, err := a.uploader.SendDungeonLog(ctx, meta, segment)
 		if err != nil {
 			if upload.IsDefinitive(err) {
 				// Segment refusé (ex. format invalide) : ne pas retenter à l'identique.
-				a.logger.Printf("run %s rejeté (définitif), ignoré : %v", r.ID, err)
-				a.state.markRunSent(a.dedupKey(r.ID))
+				a.logger.Printf("run %s rejeté (définitif), ignoré : %v", rep.ID, err)
+				markAll()
 				continue
 			}
-			a.logger.Printf("run %s : envoi : %v", r.ID, err)
+			a.logger.Printf("run %s : envoi : %v", rep.ID, err)
 			continue // transitoire
 		}
 		if res.Duplicate {
-			a.logger.Printf("run donjon déjà connu côté serveur : %s (%s)", r.ID, r.Instance)
+			a.logger.Printf("run donjon déjà connu côté serveur : %s (%s)%s", rep.ID, rep.Instance, twins)
 		} else {
-			a.logger.Printf("run donjon transmis : %s (%s, %d octets, upload #%d)", r.ID, r.Instance, len(segment), res.UploadID)
+			a.logger.Printf("run donjon transmis : %s (%s, %d octets, upload #%d)%s", rep.ID, rep.Instance, len(segment), res.UploadID, twins)
 		}
-		if err := a.state.markRunSent(a.dedupKey(r.ID)); err != nil {
-			return err
-		}
+		markAll()
 	}
 	return nil
 }
