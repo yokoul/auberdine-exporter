@@ -16,6 +16,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -85,7 +86,14 @@ func Provision(ctx context.Context, baseURL string, onURL func(connectURL string
 	go srv.Serve(ln)
 	defer srv.Close()
 
+	// host : nom de la machine, transmis pour namespacer la clé côté serveur
+	// (une clé PAR MACHINE — reconnecter ici ne révoque jamais la clé des
+	// autres machines du même compte Discord). Nettoyé au même alphabet que
+	// le serveur ; vide si indisponible (comportement historique).
 	connectURL := fmt.Sprintf("%s/uploader/connect?port=%d&state=%s", strings.TrimRight(baseURL, "/"), port, state)
+	if h := sanitizeHost(); h != "" {
+		connectURL += "&host=" + h
+	}
 	if onURL != nil {
 		onURL(connectURL)
 	}
@@ -136,4 +144,26 @@ func OpenBrowser(url string) error {
 		cmd, args = "xdg-open", []string{url}
 	}
 	return exec.Command(cmd, args...).Start()
+}
+
+// sanitizeHost renvoie le nom de machine nettoyé pour l'URL de connexion
+// (même alphabet que le serveur : [a-z0-9._-], 32 caractères au plus).
+// Chaîne vide si le système ne fournit pas de hostname.
+func sanitizeHost() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	h = strings.ToLower(strings.TrimSuffix(h, ".local"))
+	var b strings.Builder
+	for _, c := range h {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' {
+			b.WriteRune(c)
+		}
+	}
+	s := b.String()
+	if len(s) > 32 {
+		s = s[:32]
+	}
+	return s
 }
