@@ -159,3 +159,22 @@ func TestMissingAPIKeyFailsFast(t *testing.T) {
 		t.Fatal("attendu une erreur sans clé API")
 	}
 }
+
+func TestAuthErrorNotDefinitive(t *testing.T) {
+	// Un 401 (clé révoquée) N'EST PAS définitif : marquer le contenu
+	// « transmis » sur une erreur d'auth le perdrait à jamais — la clé,
+	// elle, se reconnecte. Cas réel : runs grillés du 2026-06-10.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		w.Write([]byte(`{"success":false,"error":"invalid_api_key","message":"Clé API inconnue ou révoquée."}`))
+	}))
+	defer srv.Close()
+	c := NewHTTP(srv.URL, keyFn("ak_morte"))
+	_, err := c.SendExport(context.Background(), "payload")
+	if err == nil {
+		t.Fatal("attendu une erreur")
+	}
+	if IsDefinitive(err) {
+		t.Errorf("401 ne doit PAS être définitif (transitoire, la clé se refait): %v", err)
+	}
+}

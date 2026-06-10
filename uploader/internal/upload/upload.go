@@ -94,8 +94,9 @@ type CombatResult struct {
 	Status    string `json:"status"`
 }
 
-// HTTPError porte le code HTTP et l'enveloppe d'erreur serveur. Les 4xx (hors
-// 429) sont définitifs : re-tenter à l'identique est inutile.
+// HTTPError porte le code HTTP et l'enveloppe d'erreur serveur. Les 4xx de
+// CONTENU (hors 429 et hors auth) sont définitifs : re-tenter à l'identique
+// est inutile.
 type HTTPError struct {
 	StatusCode int
 	Code       string
@@ -109,12 +110,22 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("upload: statut %d", e.StatusCode)
 }
 
-// Definitive indique une erreur qu'il ne faut pas retenter telle quelle.
+// Definitive indique une erreur qu'il ne faut pas retenter telle quelle : le
+// CONTENU est refusé (format, signature…), le renvoyer à l'identique ne
+// changera rien. Les erreurs d'AUTHENTIFICATION (401/403) n'en font PAS
+// partie : une clé révoquée se reconnecte — marquer le contenu « transmis »
+// sur un 401 le perdrait définitivement (vécu 2026-06-10 : runs de donjon
+// grillés dans SentRuns pendant que la clé était morte, jamais re-tentés
+// après le reconnect). Elles sont transitoires : on réessaiera.
 func (e *HTTPError) Definitive() bool {
-	return e.StatusCode >= 400 && e.StatusCode < 500 && e.StatusCode != http.StatusTooManyRequests
+	return e.StatusCode >= 400 && e.StatusCode < 500 &&
+		e.StatusCode != http.StatusTooManyRequests &&
+		e.StatusCode != http.StatusUnauthorized &&
+		e.StatusCode != http.StatusForbidden
 }
 
-// IsDefinitive teste si err est une erreur HTTP définitive (4xx hors 429).
+// IsDefinitive teste si err est une erreur HTTP définitive (4xx de contenu,
+// hors 429 et hors 401/403).
 func IsDefinitive(err error) bool {
 	var he *HTTPError
 	return errors.As(err, &he) && he.Definitive()

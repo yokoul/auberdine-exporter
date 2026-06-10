@@ -317,14 +317,36 @@ func (a *App) processExport(ctx context.Context, svPath string) error {
 	return a.state.setExportHash(a.dedupKey(svPath), hash)
 }
 
+// twinStaleAfter : âge au-delà duquel un run encore in_progress est un
+// ZOMBIE de manifeste (crash du client, déconnexion en instance jamais
+// suivie d'une clôture) — aucune session réelle ne dure aussi longtemps.
+// Sans ce seuil, sa fenêtre « jusqu'à maintenant » différerait
+// INDÉFINIMENT le groupe et avalerait toutes les sessions suivantes de la
+// même instance.
+const twinStaleAfter = 6 * time.Hour
+
+// dropStaleRuns écarte les runs in_progress périmés (zombies). Ils ne sont
+// PAS marqués transmis : si l'addon clôt un jour le run, il repartira.
+func dropStaleRuns(runs []manifestRun, now int64) []manifestRun {
+	out := runs[:0]
+	for _, r := range runs {
+		if r.Status != "complete" && now-r.StartedAt > int64(twinStaleAfter/time.Second) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // groupTwinRuns regroupe les runs « jumeaux » multi-comptes : même instance
 // (InstanceID) et fenêtres [StartedAt, EndedAt] qui se chevauchent = même
 // session vécue par plusieurs personnages de la machine. Deux resets
 // successifs d'une chaîne de boost ne se chevauchent jamais → jamais
 // regroupés à tort. Un run encore in_progress occupe sa fenêtre jusqu'à
 // maintenant (now) : il agrège — et donc DIFFÈRE — les jumeaux qui se
-// terminent pendant qu'il court. L'entrée doit être triée stable ; on trie
-// ici par (InstanceID, StartedAt).
+// terminent pendant qu'il court (les zombies sont écartés en amont par
+// dropStaleRuns). L'entrée doit être triée stable ; on trie ici par
+// (InstanceID, StartedAt).
 func groupTwinRuns(runs []manifestRun, now int64) [][]manifestRun {
 	sorted := append([]manifestRun(nil), runs...)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -362,7 +384,7 @@ func groupTwinRuns(runs []manifestRun, now int64) [][]manifestRun {
 // sans quoi chaque compte produisait son propre rapport côté serveur
 // (fenêtres décalées de quelques secondes → sha distincts).
 func (a *App) processDungeonLogs(ctx context.Context) error {
-	runs := a.collectManifestRuns()
+	runs := dropStaleRuns(a.collectManifestRuns(), time.Now().Unix())
 	if len(runs) == 0 {
 		return nil
 	}

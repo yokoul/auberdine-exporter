@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/yokoul/auberdine-exporter/uploader/internal/config"
 	"github.com/yokoul/auberdine-exporter/uploader/internal/upload"
@@ -239,5 +240,27 @@ func TestGroupTwinRuns(t *testing.T) {
 	g2 := groupTwinRuns(open, now)
 	if len(g2) != 1 || len(g2[0]) != 2 {
 		t.Fatalf("in_progress devrait agréger le run chevauchant: %+v", g2)
+	}
+}
+
+func TestDropStaleRuns(t *testing.T) {
+	now := int64(1_000_000)
+	old := now - int64((twinStaleAfter + time.Hour) / time.Second)
+	runs := []manifestRun{
+		// Zombie : in_progress depuis > twinStaleAfter → écarté.
+		{ID: "zombie", InstanceID: 389, StartedAt: old, Status: "in_progress"},
+		// In_progress récent : conservé (il diffère légitimement son groupe).
+		{ID: "live", InstanceID: 389, StartedAt: now - 600, Status: "in_progress"},
+		// Complete ancien : conservé (l'âge ne concerne que les in_progress).
+		{ID: "done", InstanceID: 389, StartedAt: old, EndedAt: old + 1200, Status: "complete"},
+	}
+	out := dropStaleRuns(runs, now)
+	if len(out) != 2 {
+		t.Fatalf("attendu 2 runs après filtre, obtenu %d", len(out))
+	}
+	for _, r := range out {
+		if r.ID == "zombie" {
+			t.Errorf("le zombie in_progress aurait dû être écarté")
+		}
 	}
 }
