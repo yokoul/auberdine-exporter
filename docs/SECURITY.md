@@ -2,7 +2,9 @@
 
 ## 🔒 Vue d'ensemble de la sécurité
 
-AuberdineExporter utilise un **système de validation cryptographique avancé** qui garantit l'intégrité et l'authenticité des données exportées. Toute modification des données est immédiatement détectée.
+AuberdineExporter valide l'**intégrité** des données exportées par un système d'empreintes multi-passes : toute modification accidentelle ou naïve de l'export est détectée côté serveur.
+
+> **Portée honnête** (audit 2026-06) : la clé de signature étant embarquée dans l'addon (code public par nature — Lua lisible chez chaque utilisateur), ce mécanisme est un **frein anti-modification**, pas une preuve cryptographique d'authenticité au sens fort. C'est un choix de conception assumé : l'export reste vérifiable et reproductible, et la vraie authentification de l'envoi repose sur la **clé API personnelle** de l'utilisateur (uploader / page de connexion). La protection du canal de **mise à jour du client**, elle, repose sur une vraie signature ed25519 hors ligne (voir `uploader/cmd/relsign`).
 
 ## 🛡️ Architecture de sécurité
 

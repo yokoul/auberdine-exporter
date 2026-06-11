@@ -2,6 +2,7 @@ package luasv
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -110,5 +111,19 @@ func TestParseEmptyTable(t *testing.T) {
 	}
 	if m, ok := got["E"].(map[string]any); !ok || len(m) != 0 {
 		t.Errorf("E = %v (%T)", got["E"], got["E"])
+	}
+}
+
+// TestParseDepthBound : imbrication bornée (audit 2026-06, point 2) — un
+// fichier aux tables pathologiquement profondes est refusé proprement (erreur,
+// pas d'épuisement de pile), une profondeur réaliste passe.
+func TestParseDepthBound(t *testing.T) {
+	deep := "X = " + strings.Repeat("{ a = ", maxTableDepth+10) + "1" + strings.Repeat(" }", maxTableDepth+10)
+	if _, err := Parse(deep); err == nil {
+		t.Fatalf("imbrication > %d niveaux : erreur attendue", maxTableDepth)
+	}
+	ok := "X = " + strings.Repeat("{ a = ", 30) + "1" + strings.Repeat(" }", 30)
+	if _, err := Parse(ok); err != nil {
+		t.Fatalf("imbrication réaliste refusée : %v", err)
 	}
 }
