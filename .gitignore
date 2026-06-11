@@ -31,10 +31,6 @@ build/
 # Development context files
 SESSION_CONTEXT.md
 
-# Secrets — ne JAMAIS versionner (cf. server/secret.example.json)
-server/secret.json
-secret.json
-
 # Go uploader build artifacts
 uploader/auberdine-uploader
 uploader/auberdine-uploader.exe
