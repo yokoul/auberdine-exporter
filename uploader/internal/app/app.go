@@ -28,6 +28,10 @@ import (
 // binaire, en plus du contrôle au démarrage (handshake).
 const updateCheckInterval = 24 * time.Hour
 
+// maxSavedVarsSize plafonne la lecture d'une SavedVariable (chargée entière
+// en mémoire pour le parse) — garde-fou contre un fichier aberrant.
+const maxSavedVarsSize = 64 << 20
+
 // App est le démon de l'uploader.
 type App struct {
 	paths    discovery.Paths
@@ -274,6 +278,13 @@ func (a *App) tick(ctx context.Context) {
 // dernier envoi. L'uploader ne re-signe ni ne reconstruit l'export : il relaie
 // tel quel ce que l'addon a produit (seul détenteur de la clé de signature).
 func (a *App) processExport(ctx context.Context, svPath string) error {
+	// Plafond de lecture (audit 2026-06, point 2) : une SavedVariable réelle
+	// pèse quelques Mo ; au-delà de 64 Mo c'est un fichier aberrant qu'on
+	// refuse plutôt que de le charger entier en mémoire.
+	if st, err := os.Stat(svPath); err == nil && st.Size() > maxSavedVarsSize {
+		return fmt.Errorf("SavedVariables anormalement gros (%d Mo > %d Mo), ignoré",
+			st.Size()>>20, maxSavedVarsSize>>20)
+	}
 	raw, err := os.ReadFile(svPath)
 	if err != nil {
 		return err

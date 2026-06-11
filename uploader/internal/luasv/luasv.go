@@ -15,6 +15,12 @@ import (
 	"unicode"
 )
 
+// maxTableDepth borne l'imbrication des tables (audit 2026-06, point 2) :
+// les SavedVariables réelles restent sous ~20 niveaux ; au-delà de 200 c'est
+// un fichier corrompu ou hostile, et la récursion mutuelle parseValue ↔
+// parseTable épuiserait la pile Go (panique fatale, non récupérable).
+const maxTableDepth = 200
+
 // Parse lit le contenu complet d'un fichier SavedVariables et renvoie une map
 // des variables globales de premier niveau (ex. "AuberdineExporterDB").
 //
@@ -22,7 +28,16 @@ import (
 //   - une table dont les clés sont les entiers 1..n contigus devient un []any ;
 //   - sinon elle devient une map[string]any (les clés entières sont
 //     converties en chaînes, comme le ferait un encodage JSON).
-func Parse(src string) (map[string]any, error) {
+//
+// Robustesse : profondeur de récursion bornée (maxTableDepth) et panique du
+// parseur convertie en erreur — un fichier corrompu d'un compte ne doit pas
+// abattre le démon ni le cycle des autres comptes.
+func Parse(src string) (out map[string]any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = nil, fmt.Errorf("luasv: panique du parseur: %v", r)
+		}
+	}()
 	p := &parser{lex: newLexer(src)}
 	return p.parseChunk()
 }
@@ -290,6 +305,7 @@ func isHex(c byte) bool {
 type parser struct {
 	lex    *lexer
 	peeked *token
+	depth  int // imbrication de tables en cours (borné par maxTableDepth)
 }
 
 func (p *parser) next() (token, error) {
@@ -373,6 +389,11 @@ type tableEntry struct {
 }
 
 func (p *parser) parseTable() (any, error) {
+	p.depth++
+	defer func() { p.depth-- }()
+	if p.depth > maxTableDepth {
+		return nil, fmt.Errorf("luasv: tables imbriquées au-delà de %d niveaux — fichier refusé", maxTableDepth)
+	}
 	var entries []tableEntry
 	for {
 		t, err := p.peek()

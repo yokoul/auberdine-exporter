@@ -69,6 +69,10 @@ type ClientRelease struct {
 type ReleaseAsset struct {
 	URL    string `json:"url"`
 	SHA256 string `json:"sha256"`
+	// Sig est la signature ed25519 (base64) du binaire, produite HORS LIGNE
+	// par le mainteneur (cmd/relsign) et simplement relayée par le serveur.
+	// Exigée par selfupdate : sans signature, pas de mise à jour.
+	Sig string `json:"sig,omitempty"`
 }
 
 // ExportResult résume la réponse de POST /ingest/export.
