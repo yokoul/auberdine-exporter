@@ -506,7 +506,6 @@ func (a *App) processDungeonLogs(ctx context.Context) error {
 			MapID:        rep.InstanceID,
 			StartedAt:    start,
 			EndedAt:      end,
-			Floors:       toUploadFloors(rep.Floors),
 		}
 		res, err := a.uploader.SendDungeonLog(ctx, meta, segment)
 		if err != nil {
