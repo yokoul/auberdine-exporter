@@ -15,8 +15,19 @@
 local MANIFEST_SCHEMA = 1
 local MAX_RUNS = 100 -- rétention : on borne la taille du manifeste
 
+-- Échantillonnage d'étage (cf. replay /donjon/:code) : le log de combat ne
+-- porte pas l'étage en Era (uiMapID = 0 en instance), mais le client le résout
+-- bien — c'est ce que voit la minimap. On capte donc périodiquement
+-- C_Map.GetBestMapForUnit (uiMapID de l'étage courant) + la position
+-- normalisée sur cet étage, pour reconstituer côté serveur quel plan afficher
+-- et à quel instant.
+local FLOOR_SAMPLE_INTERVAL = 3 -- secondes entre deux échantillons
+local MAX_FLOOR_SAMPLES = 1500 -- borne (≈ 75 min de run) ; on jette les plus vieux
+
 -- État du run en cours (nil si hors donjon).
 local activeRun = nil
+-- Ticker d'échantillonnage d'étage, actif uniquement pendant un run.
+local floorTicker = nil
 
 -- Clé personnage "Nom-Royaume".
 local function characterKey()
@@ -62,6 +73,54 @@ local function upsertRun(run)
     end
 end
 
+-- Capte l'étage courant (uiMapID) + position normalisée du joueur, et pousse
+-- un échantillon { t, m, x, y } dans le run actif. Tolérant : si l'API ne rend
+-- rien (transition de zone, position indispo), on ne pousse rien.
+local function sampleFloor()
+    if not activeRun then return end
+    if not C_Map or not C_Map.GetBestMapForUnit then return end
+    local uiMap = C_Map.GetBestMapForUnit("player")
+    if not uiMap or uiMap == 0 then return end
+    local x, y = 0, 0
+    local pos = C_Map.GetPlayerMapPosition and C_Map.GetPlayerMapPosition(uiMap, "player")
+    if pos then
+        local px, py = pos:GetXY()
+        if px then x = px end
+        if py then y = py end
+    end
+    activeRun.floors = activeRun.floors or {}
+    local f = activeRun.floors
+    local n = #f
+    -- Dédoublonnage léger : si l'étage n'a pas changé ET que le dernier
+    -- échantillon est récent, on écrase la position du dernier au lieu d'empiler
+    -- (on garde le t d'origine de l'étage pour marquer la transition).
+    local last = n > 0 and f[n] or nil
+    if last and last.m == uiMap and (time() - last.t) < FLOOR_SAMPLE_INTERVAL * 3 then
+        last.x, last.y = x, y
+        return
+    end
+    f[n + 1] = { t = time(), m = uiMap, x = x, y = y }
+    while #f > MAX_FLOOR_SAMPLES do
+        table.remove(f, 1)
+    end
+end
+
+-- Lance / arrête le ticker d'échantillonnage d'étage.
+local function startFloorSampling()
+    if floorTicker then floorTicker:Cancel() end
+    sampleFloor() -- premier point immédiat
+    if C_Timer and C_Timer.NewTicker then
+        floorTicker = C_Timer.NewTicker(FLOOR_SAMPLE_INTERVAL, sampleFloor)
+    end
+end
+local function stopFloorSampling()
+    if floorTicker then
+        floorTicker:Cancel()
+        floorTicker = nil
+    end
+    sampleFloor() -- dernier point à la sortie
+end
+
 -- Démarre un run à l'entrée d'un donjon.
 local function startRun()
     local name, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
@@ -74,15 +133,18 @@ local function startRun()
         startedAt = started,
         endedAt = 0,
         status = "in_progress",
+        floors = {},
     }
     upsertRun(activeRun)
     LoggingCombat(true)
+    startFloorSampling()
     print(string.format("|cff00ff00AuberdineExporter:|r log de donjon démarré (%s)", activeRun.instance))
 end
 
 -- Clôt le run courant à la sortie du donjon.
 local function finishRun()
     if not activeRun then return end
+    stopFloorSampling()
     activeRun.endedAt = time()
     activeRun.status = "complete"
     upsertRun(activeRun)

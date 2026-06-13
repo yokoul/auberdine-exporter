@@ -80,6 +80,15 @@ type ExportResult struct {
 	Processed int `json:"processed"`
 }
 
+// FloorSample est un relevé d'étage (C_Map) transmis au serveur : t = epoch s,
+// m = uiMapID de l'étage, x/y = position normalisée [0,1] sur l'étage.
+type FloorSample struct {
+	T int64   `json:"t"`
+	M int64   `json:"m"`
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
 // CombatMeta décrit le run associé à un segment de log. Le sha256 et la taille
 // brute sont calculés par l'uploader à partir du segment lui-même.
 type CombatMeta struct {
@@ -89,6 +98,9 @@ type CombatMeta struct {
 	MapID        int64
 	StartedAt    int64
 	EndedAt      int64
+	// Floors : timeline d'étage captée par l'addon (peut être vide pour les
+	// runs antérieurs à la maj addon, ou hors donjon vertical).
+	Floors []FloorSample
 }
 
 // CombatResult résume la réponse de POST /ingest/combatlog.
@@ -195,19 +207,23 @@ func (c *HTTPClient) SendDungeonLog(ctx context.Context, meta CombatMeta, raw []
 		return out, err
 	}
 
+	metaMap := map[string]any{
+		"sha256":        hex.EncodeToString(sum[:]),
+		"sizeRaw":       len(raw),
+		"client":        clientName,
+		"clientVersion": ClientVersion,
+		"realm":         meta.Realm,
+		"uploader":      meta.Uploader,
+		"instance":      map[string]any{"name": meta.InstanceName, "mapId": meta.MapID},
+		"startedAt":     meta.StartedAt,
+		"endedAt":       meta.EndedAt,
+		"logFormat":     "wow-combatlog-1.15",
+	}
+	if len(meta.Floors) > 0 {
+		metaMap["floors"] = meta.Floors
+	}
 	body := map[string]any{
-		"meta": map[string]any{
-			"sha256":        hex.EncodeToString(sum[:]),
-			"sizeRaw":       len(raw),
-			"client":        clientName,
-			"clientVersion": ClientVersion,
-			"realm":         meta.Realm,
-			"uploader":      meta.Uploader,
-			"instance":      map[string]any{"name": meta.InstanceName, "mapId": meta.MapID},
-			"startedAt":     meta.StartedAt,
-			"endedAt":       meta.EndedAt,
-			"logFormat":     "wow-combatlog-1.15",
-		},
+		"meta":          metaMap,
 		"logGzipBase64": base64.StdEncoding.EncodeToString(gz.Bytes()),
 	}
 	payload, err := json.Marshal(body)
