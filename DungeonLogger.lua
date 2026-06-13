@@ -100,6 +100,11 @@ local function sampleFloor()
         return
     end
     f[n + 1] = { t = time(), m = uiMap, x = x, y = y }
+    -- Retour visuel en direct (transitions d'étage seulement) : confirme la
+    -- capture pendant un run, sans /dump ni fouille des SavedVariables.
+    print(string.format(
+        "|cff66ccffAuberdineExporter:|r étage capté — uiMap %d (%.2f, %.2f)",
+        uiMap, x, y))
     while #f > MAX_FLOOR_SAMPLES do
         table.remove(f, 1)
     end
