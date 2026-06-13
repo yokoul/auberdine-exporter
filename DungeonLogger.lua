@@ -90,21 +90,18 @@ local function sampleFloor()
     end
     activeRun.floors = activeRun.floors or {}
     local f = activeRun.floors
-    local n = #f
-    -- Dédoublonnage léger : si l'étage n'a pas changé ET que le dernier
-    -- échantillon est récent, on écrase la position du dernier au lieu d'empiler
-    -- (on garde le t d'origine de l'étage pour marquer la transition).
-    local last = n > 0 and f[n] or nil
-    if last and last.m == uiMap and (time() - last.t) < FLOOR_SAMPLE_INTERVAL * 3 then
-        last.x, last.y = x, y
-        return
+    -- On empile CHAQUE relevé (≈ toutes les 3 s) : c'est un fil de positions
+    -- normalisées (x,y) ET d'étage (m), pas seulement la « hauteur ». Le serveur
+    -- s'en sert pour la sélection d'étage et, en croisant les x,y avec les
+    -- coordonnées-monde du log, pour caler la projection par étage.
+    local last = f[#f]
+    f[#f + 1] = { t = time(), m = uiMap, x = x, y = y }
+    -- Retour visuel : uniquement aux transitions d'étage (pas à chaque tick).
+    if not last or last.m ~= uiMap then
+        print(string.format(
+            "|cff66ccffAuberdineExporter:|r étage capté — uiMap %d (%.2f, %.2f)",
+            uiMap, x, y))
     end
-    f[n + 1] = { t = time(), m = uiMap, x = x, y = y }
-    -- Retour visuel en direct (transitions d'étage seulement) : confirme la
-    -- capture pendant un run, sans /dump ni fouille des SavedVariables.
-    print(string.format(
-        "|cff66ccffAuberdineExporter:|r étage capté — uiMap %d (%.2f, %.2f)",
-        uiMap, x, y))
     while #f > MAX_FLOOR_SAMPLES do
         table.remove(f, 1)
     end
