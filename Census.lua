@@ -246,6 +246,7 @@ function Census:GetExportData()
                 faction = p.faction,
                 zone    = p.zone,
                 guild   = p.guild,
+                seenAt  = p.seenAt,  -- date d'observation réelle (journal serveur)
             }
         end
     end
