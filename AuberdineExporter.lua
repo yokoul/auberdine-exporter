@@ -1986,6 +1986,15 @@ function ExportToJSON()
         end
     end
 
+    -- NOUVEAU v1.8.0: Butin de raid (épiques captés en raid + attributions
+    -- Gargul). Même export signé, traité en side-channel (clé `raidLoots`).
+    if AuberdineExporter.LootTracker and AuberdineExporter.LootTracker.GetExportData then
+        local lootData = AuberdineExporter.LootTracker:GetExportData()
+        if lootData and lootData.items and #lootData.items > 0 then
+            exportData.raidLoots = lootData
+        end
+    end
+
     -- Fonction de conversion JSON améliorée avec échappement complet
     local function escapeJSON(s)
         s = string.gsub(s, "\\", "\\\\")
