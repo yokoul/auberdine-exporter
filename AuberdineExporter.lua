@@ -1986,7 +1986,7 @@ function ExportToJSON()
         end
     end
 
-    -- NOUVEAU v1.8.0: Butin de raid (épiques captés en raid + attributions
+    -- NOUVEAU v1.7.3: Butin de raid (épiques captés en raid + attributions
     -- Gargul). Même export signé, traité en side-channel (clé `raidLoots`).
     if AuberdineExporter.LootTracker and AuberdineExporter.LootTracker.GetExportData then
         local lootData = AuberdineExporter.LootTracker:GetExportData()

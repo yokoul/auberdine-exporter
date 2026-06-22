@@ -4,7 +4,7 @@ Capture des objets **épiques** tombés en raid et de leur destinataire, « faç
 Gargul », pour le journal du joueur et le tableau de butin de la guilde sur
 auberdine.eu.
 
-Produit par `LootTracker.lua` (addon, v1.8.0+), transmis dans l'export perso
+Produit par `LootTracker.lua` (addon, v1.7.3+), transmis dans l'export perso
 signé (clé top-level `raidLoots`), traité côté serveur en **side-channel** par
 `addonImporter.processRaidLoots` — exactement comme `census`. Aucun changement
 du client Go uploader.
