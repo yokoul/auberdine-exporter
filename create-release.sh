@@ -3,7 +3,7 @@
 # Script de création du ZIP de release pour CurseForge
 # Usage: ./create-release.sh
 
-VERSION="1.7.2"
+VERSION="1.7.4"
 ADDON_NAME="AuberdineExporter"
 BUILD_DIR="build"
 RELEASE_DIR="$BUILD_DIR/$ADDON_NAME"
@@ -21,6 +21,8 @@ cp "AuberdineExporter.lua" "$RELEASE_DIR/"
 cp "GuildTracker.lua" "$RELEASE_DIR/"
 cp "Census.lua" "$RELEASE_DIR/"
 cp "DungeonLogger.lua" "$RELEASE_DIR/"
+cp "LootTracker.lua" "$RELEASE_DIR/"
+cp "Inbox.lua" "$RELEASE_DIR/"
 cp "AuberdineExporter.toc" "$RELEASE_DIR/"
 cp "LICENSE" "$RELEASE_DIR/"
 
