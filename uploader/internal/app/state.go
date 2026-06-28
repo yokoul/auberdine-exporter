@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/yokoul/auberdine-exporter/uploader/internal/atomicfile"
 )
 
 // State est l'état technique de transmission, persisté localement. Il ne
@@ -58,7 +60,18 @@ func LoadState() (*State, error) {
 		return nil, err
 	}
 	if err := json.Unmarshal(data, s); err != nil {
-		return nil, err
+		// État corrompu — typiquement une écriture interrompue par un arrêt
+		// brutal (l'ancien os.WriteFile tronquait avant d'écrire). NON FATAL :
+		// on écarte le fichier abîmé (conservé en .corrupt pour diagnostic) et
+		// on repart d'un état vide, plutôt que d'empêcher TOUT démarrage du
+		// client. L'état n'est qu'un cache de dédup : le perdre ne fait que
+		// renvoyer quelques données déjà transmises, sans dommage.
+		_ = os.Rename(p, p+".corrupt")
+		return &State{
+			ExportHashes: map[string]string{},
+			SentRuns:     map[string]bool{},
+			path:         p,
+		}, nil
 	}
 	if s.ExportHashes == nil {
 		s.ExportHashes = map[string]string{}
@@ -78,7 +91,7 @@ func (s *State) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o600)
+	return atomicfile.Write(s.path, data, 0o600)
 }
 
 func (s *State) lastExportHash(file string) string {

@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yokoul/auberdine-exporter/uploader/internal/atomicfile"
 )
 
 // DefaultEndpoint est la base de l'API d'ingestion auberdine.eu.
@@ -104,8 +106,16 @@ func Load() (Config, error) {
 	cfg := Default()
 	data, err := os.ReadFile(p)
 	if err == nil {
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			return Config{}, err
+		if uerr := json.Unmarshal(data, &cfg); uerr != nil {
+			// Config corrompue — typiquement une écriture interrompue par un
+			// arrêt brutal (l'ancien os.WriteFile tronquait avant d'écrire).
+			// NON FATAL : on écarte le fichier abîmé (conservé en .corrupt pour
+			// récupérer la clé manuellement au besoin) et on repart des défauts,
+			// plutôt que d'empêcher le client de démarrer. L'utilisateur pourra
+			// refaire `connect`. Mieux vaut un client qui tourne et redemande la
+			// liaison qu'un client mort et silencieux.
+			_ = os.Rename(p, p+".corrupt")
+			cfg = Default()
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Config{}, err
@@ -132,5 +142,5 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0o600)
+	return atomicfile.Write(p, data, 0o600)
 }

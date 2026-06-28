@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/yokoul/auberdine-exporter/uploader/internal/version"
@@ -30,6 +31,14 @@ import (
 var ClientVersion = version.Version
 
 const clientName = "auberdine-uploader"
+
+// userAgent annonce le client à chaque requête /ingest : version réelle du
+// binaire + OS + architecture. Le serveur le persiste par machine (clé
+// d'ingestion) pour afficher « v0.2.0 · Windows » et un badge « à jour / MAJ
+// dispo » dans le panneau Machines connectées du Camp. Forme :
+//
+//	auberdine-uploader/v0.2.0 (windows; amd64)
+var userAgent = fmt.Sprintf("%s/%s (%s; %s)", clientName, version.Version, runtime.GOOS, runtime.GOARCH)
 
 // Uploader transmet exports et segments de log de donjon.
 type Uploader interface {
@@ -258,6 +267,7 @@ func (c *HTTPClient) do(ctx context.Context, method, path string, body []byte) (
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("User-Agent", userAgent)
 		if body != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}

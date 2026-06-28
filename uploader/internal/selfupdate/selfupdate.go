@@ -124,9 +124,15 @@ func applyTo(ctx context.Context, asset upload.ReleaseAsset, exe string) (string
 		os.Remove(tmp)
 		return "", fmt.Errorf("selfupdate: écarter l'ancien binaire: %w", err)
 	}
-	if err := os.Rename(tmp, exe); err != nil {
-		// Restauration : l'ancien binaire reprend sa place.
-		if rerr := os.Rename(old, exe); rerr != nil {
+	// Glisse le nouveau binaire à la place de l'ancien. Sous Windows, un
+	// antivirus (scan-on-write) tient souvent un verrou BREF sur l'exécutable
+	// fraîchement écrit : un rename immédiat échoue alors qu'il réussirait une
+	// fraction de seconde plus tard → on retente. SURTOUT, en cas d'échec, on
+	// garantit que le chemin stable n'est JAMAIS laissé vide (restauration du
+	// .old, retentée elle aussi) : sinon la clé de démarrage Windows pointe
+	// vers un binaire manquant et plus rien ne se lance (incident legioul).
+	if err := renameRetry(tmp, exe); err != nil {
+		if rerr := renameRetry(old, exe); rerr != nil {
 			return "", fmt.Errorf("selfupdate: substitution ET restauration échouées (%v puis %v) — réinstallez via https://auberdine.eu/uploader/", err, rerr)
 		}
 		os.Remove(tmp)
@@ -137,6 +143,24 @@ func applyTo(ctx context.Context, asset upload.ReleaseAsset, exe string) (string
 	// nettoyé par CleanupLeftovers au prochain démarrage.
 	os.Remove(old)
 	return exe, nil
+}
+
+// renameRetry renomme from→to avec quelques tentatives espacées. Sous Windows,
+// un antivirus ou l'indexeur peut tenir un verrou transitoire sur un fichier
+// fraîchement écrit, faisant échouer un rename immédiat qui passerait peu après.
+// Crucial pour la restauration du .old : ne jamais abandonner sur un simple
+// verrou passager qui laisserait le chemin du binaire vide.
+func renameRetry(from, to string) error {
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			time.Sleep(200 * time.Millisecond)
+		}
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // download écrit l'asset vérifié dans dest (0755). L'empreinte sha256 ET la

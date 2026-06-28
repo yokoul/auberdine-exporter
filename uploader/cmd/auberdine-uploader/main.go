@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"log"
@@ -29,6 +30,16 @@ import (
 )
 
 func main() {
+	// Dernier rempart : un panic au démarrage du service Windows (sans console,
+	// -H windowsgui) serait sinon totalement silencieux. On l'écrit dans le log
+	// persistant avant de sortir, pour qu'une panne future soit diagnosticable.
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(logWriter(), "PANIC: %v\n%s\n", r, debug.Stack())
+			os.Exit(1)
+		}
+	}()
+
 	cmd := "daemon"
 	if len(os.Args) > 1 {
 		cmd = os.Args[1]
@@ -36,7 +47,7 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		fmt.Fprintf(logWriter(), "config: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -88,14 +99,14 @@ si le binaire le permet, le démon sinon.
 }
 
 func runTray(cfg config.Config) {
-	logger := log.New(os.Stderr, "auberdine-uploader ", log.LstdFlags)
+	logger := log.New(logWriter(), "auberdine-uploader ", log.LstdFlags)
 	if !tray.Available {
 		logger.Print("tray indisponible : recompilez avec « go build -tags tray ./cmd/auberdine-uploader »")
 		os.Exit(1)
 	}
 	a, err := app.New(cfg, nil, logger)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "démarrage: %v\n", err)
+		logger.Printf("démarrage: %v", err)
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -104,9 +115,12 @@ func runTray(cfg config.Config) {
 }
 
 func runDaemon(cfg config.Config) {
-	a, err := app.New(cfg, nil, nil)
+	// Logger vers le fichier persistant (Windows) en plus de stderr : sans ça,
+	// une erreur de démarrage du démon serait muette sous Windows.
+	logger := log.New(logWriter(), "auberdine-uploader ", log.LstdFlags)
+	a, err := app.New(cfg, nil, logger)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "démarrage: %v\n", err)
+		logger.Printf("démarrage: %v", err)
 		os.Exit(1)
 	}
 
@@ -114,7 +128,7 @@ func runDaemon(cfg config.Config) {
 	defer stop()
 
 	if err := a.Run(ctx); err != nil && err != context.Canceled {
-		fmt.Fprintf(os.Stderr, "arrêt: %v\n", err)
+		logger.Printf("arrêt: %v", err)
 	}
 }
 
