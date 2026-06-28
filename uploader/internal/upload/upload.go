@@ -48,6 +48,12 @@ type Uploader interface {
 	SendExport(ctx context.Context, jsonData string) (ExportResult, error)
 	// SendDungeonLog transmet un segment de log de combat pour un run de donjon.
 	SendDungeonLog(ctx context.Context, meta CombatMeta, raw []byte) (CombatResult, error)
+	// Messages récupère les messages descendants en attente pour le compte
+	// (canal site → uploader → addon → pop-up in-game).
+	Messages(ctx context.Context) ([]InboxMessage, error)
+	// AckMessages signale au serveur les messages déjà vus en jeu (lus de
+	// AuberdineExporterDB.seenMessages). Idempotent.
+	AckMessages(ctx context.Context, ids []string) error
 }
 
 // StatusResponse est la réponse de GET /ingest/status.
@@ -105,6 +111,23 @@ type CombatResult struct {
 	UploadID  int64  `json:"uploadId"`
 	Duplicate bool   `json:"duplicate"`
 	Status    string `json:"status"`
+}
+
+// InboxMessage est un message descendant destiné à l'affichage in-game. Mêmes
+// champs que le contrat de la SavedVariable AuberdineUploaderInbox (Inbox.lua).
+// Dates en epoch s ; ExpiresAt nullable.
+type InboxMessage struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	CreatedAt *int64 `json:"createdAt"`
+	ExpiresAt *int64 `json:"expiresAt"`
+}
+
+type messagesResponse struct {
+	Success  bool           `json:"success"`
+	Messages []InboxMessage `json:"messages"`
 }
 
 // HTTPError porte le code HTTP et l'enveloppe d'erreur serveur. Les 4xx de
@@ -173,6 +196,33 @@ func (c *HTTPClient) Status(ctx context.Context) (StatusResponse, error) {
 		return out, fmt.Errorf("upload: réponse status illisible: %w", err)
 	}
 	return out, nil
+}
+
+// Messages récupère les messages descendants en attente (GET /ingest/messages).
+func (c *HTTPClient) Messages(ctx context.Context) ([]InboxMessage, error) {
+	body, err := c.do(ctx, http.MethodGet, "/ingest/messages", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out messagesResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("upload: réponse messages illisible: %w", err)
+	}
+	return out.Messages, nil
+}
+
+// AckMessages signale les messages vus (POST /ingest/messages/ack). No-op si
+// la liste est vide.
+func (c *HTTPClient) AckMessages(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(map[string][]string{"ids": ids})
+	if err != nil {
+		return err
+	}
+	_, err = c.do(ctx, http.MethodPost, "/ingest/messages/ack", payload)
+	return err
 }
 
 // SendExport poste l'export signé vers /ingest/export.

@@ -13,9 +13,11 @@ import (
 
 // fakeUploader capture les appels pour les assertions.
 type fakeUploader struct {
-	exports []string
-	runs    []capturedRun
-	err     error
+	exports  []string
+	runs     []capturedRun
+	err      error
+	messages []upload.InboxMessage
+	acked    []string
 }
 
 type capturedRun struct {
@@ -43,6 +45,15 @@ func (f *fakeUploader) SendDungeonLog(_ context.Context, meta upload.CombatMeta,
 	copy(cp, raw)
 	f.runs = append(f.runs, capturedRun{meta, cp})
 	return upload.CombatResult{UploadID: 1, Status: "stored"}, nil
+}
+
+func (f *fakeUploader) Messages(context.Context) ([]upload.InboxMessage, error) {
+	return f.messages, nil
+}
+
+func (f *fakeUploader) AckMessages(_ context.Context, ids []string) error {
+	f.acked = append(f.acked, ids...)
+	return nil
 }
 
 // setupWoW crée une arborescence WoW minimale avec une SavedVariable.

@@ -28,6 +28,11 @@ import (
 // binaire, en plus du contrôle au démarrage (handshake).
 const updateCheckInterval = 24 * time.Hour
 
+// messageSyncInterval est la cadence du canal descendant (récupération des
+// messages in-game + acquittement). Faible volume : inutile de poller au rythme
+// des exports.
+const messageSyncInterval = 2 * time.Minute
+
 // maxSavedVarsSize plafonne la lecture d'une SavedVariable (chargée entière
 // en mémoire pour le parse) — garde-fou contre un fichier aberrant.
 const maxSavedVarsSize = 64 << 20
@@ -171,10 +176,13 @@ func (a *App) Run(ctx context.Context) error {
 	// mise à jour vit dans la même boucle que tick() : jamais en concurrence
 	// avec un upload en cours.
 	a.tick(ctx)
+	a.syncMessages(ctx) // canal descendant : 1re récupération dès le démarrage
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	ut := time.NewTicker(updateCheckInterval)
 	defer ut.Stop()
+	mt := time.NewTicker(messageSyncInterval)
+	defer mt.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -183,6 +191,8 @@ func (a *App) Run(ctx context.Context) error {
 			a.tick(ctx)
 		case <-ut.C:
 			a.checkSelfUpdate(ctx)
+		case <-mt.C:
+			a.syncMessages(ctx)
 		}
 	}
 }
