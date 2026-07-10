@@ -207,7 +207,13 @@ function AuberdineExporterUI:CreateMainFrame()
     exportBtn:SetSize(160, 30)
     exportBtn:SetText("Export Auberdine")
     exportBtn:SetScript("OnClick", function()
-        local jsonData = ExportToJSON()
+        -- pcall : une erreur profonde d'export afficherait sinon une popup
+        -- d'erreur Lua brute au clic.
+        local ok, jsonData = pcall(ExportToJSON)
+        if not ok or not jsonData then
+            print("|cffff0000AuberdineExporter:|r Export impossible : " .. tostring(jsonData))
+            return
+        end
         CreateExportFrame(jsonData, "Auberdine")
     end)
     
@@ -217,7 +223,11 @@ function AuberdineExporterUI:CreateMainFrame()
     csvBtn:SetSize(160, 30)
     csvBtn:SetText("Export CSV")
     csvBtn:SetScript("OnClick", function()
-        local csvData = ExportToCSV()
+        local ok, csvData = pcall(ExportToCSV)
+        if not ok or not csvData then
+            print("|cffff0000AuberdineExporter:|r Export CSV impossible : " .. tostring(csvData))
+            return
+        end
         CreateExportFrame(csvData, "CSV")
     end)
     

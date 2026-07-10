@@ -1570,6 +1570,13 @@ local inventoryScanState = {
 local INVENTORY_SCAN_THROTTLE = 2 -- secondes mini entre deux scans automatiques
 
 local function RunBagsScan()
+    -- En combat, on reporte : un scan complet des sacs déclenché par un
+    -- loot ramassé pendant un pull de raid provoquerait un micro-freeze
+    -- au pire moment. Le flag pending reste posé, on retentera après.
+    if InCombatLockdown and InCombatLockdown() then
+        C_Timer.After(INVENTORY_SCAN_THROTTLE, RunBagsScan)
+        return
+    end
     inventoryScanState.pendingBags = false
     if not IsValidRealm() then return end
     local charKey = InitializeCharacterData()
@@ -1581,6 +1588,10 @@ local function RunBagsScan()
 end
 
 local function RunEquipmentScan()
+    if InCombatLockdown and InCombatLockdown() then
+        C_Timer.After(INVENTORY_SCAN_THROTTLE, RunEquipmentScan)
+        return
+    end
     inventoryScanState.pendingEquipment = false
     if not IsValidRealm() then return end
     local charKey = InitializeCharacterData()
@@ -2381,7 +2392,13 @@ local function CreateMainFrame()
     exportButton:SetPoint("TOPLEFT", 20, -60)
     exportButton:SetText("Export Auberdine")
     exportButton:SetScript("OnClick", function()
-        local jsonData = ExportToJSON()
+        -- pcall : une donnée malformée (module tracker, table imbriquée)
+        -- afficherait sinon une popup d'erreur Lua brute au clic.
+        local ok, jsonData = pcall(ExportToJSON)
+        if not ok or not jsonData then
+            print("|cffff0000AuberdineExporter:|r Export impossible : " .. tostring(jsonData))
+            return
+        end
         CreateExportFrame(jsonData, "JSON-AUBERDINE")
     end)
     
@@ -2391,7 +2408,11 @@ local function CreateMainFrame()
     csvButton:SetPoint("TOPLEFT", 300, -60)
     csvButton:SetText("Export CSV")
     csvButton:SetScript("OnClick", function()
-        local csvData = ExportToCSV()
+        local ok, csvData = pcall(ExportToCSV)
+        if not ok or not csvData then
+            print("|cffff0000AuberdineExporter:|r Export CSV impossible : " .. tostring(csvData))
+            return
+        end
         CreateExportFrame(csvData, "CSV")
     end)
     
