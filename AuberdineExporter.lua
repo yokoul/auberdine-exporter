@@ -15,7 +15,7 @@ local GetStatistics, InitializeCharacterSettings, SetCharacterType,
       GetCharacterType, LinkCharacterToMain, SetAccountGroup,
       GetAccountGroup, ListCharacterConfiguration, ToggleCharacterExport,
       DeleteCharacter, GetExportableCharacters, ExportToJSON,
-      ExportToSimpleJSON, ExportToCSV, CreateExportFrame
+      ExportToCSV, CreateExportFrame
 
 -- Public function to check if we're on the correct realm
 function AuberdineExporter:IsOnAuberdine()
@@ -287,13 +287,6 @@ local function GetCharacterTalents()
         })
     end
     return talents
-end
-
--- Stub pour GetSpellIDFromTooltip si non défini
-if not GetSpellIDFromTooltip then
-    function GetSpellIDFromTooltip()
-        return nil
-    end
 end
 
 -- Function to validate if we're on the correct realm (Auberdine)
@@ -2281,114 +2274,6 @@ function ExportToJSON()
     return tableToJSON(exportWrapper, 0, false)
 end
 
--- Export JSON simple pour auberdine.eu
-function ExportToSimpleJSON()
-    -- On prend le personnage courant (celui connecté)
-    local charKey = GetCurrentCharacterKey()
-    local charData = AuberdineExporterDB.characters[charKey]
-    if not charData then
-        return '{"error":"Aucun personnage courant trouvé"}'
-    end
-
-    -- Rafraîchir skills et reputations depuis le jeu (toujours à jour)
-    local freshSkills = GetCharacterSkills and GetCharacterSkills() or {}
-    local freshReputations = GetCharacterReputations and GetCharacterReputations() or {}
-    charData.skills = freshSkills
-    charData.reputations = freshReputations
-
-    -- Construction du bloc character (à plat)
-    local character = {
-        name = charData.name,
-        class = charData.class,
-        level = charData.level,
-        race = charData.race,
-        realm = charData.realm,
-        guid = charData.guid,
-        locale = charData.locale,
-        lastUpdate = charData.lastUpdate,
-        -- Ajoute d'autres champs si besoin (guild, etc.)
-    }
-
-    -- Construction du bloc recipes (par métier, liste de noms)
-    local recipes = {}
-    if charData.professions then
-        for profName, profData in pairs(charData.professions) do
-            recipes[profName] = {}
-            if profData.recipes then
-                for _, recipeData in pairs(profData.recipes) do
-                    if recipeData.name then
-                        table.insert(recipes[profName], recipeData.name)
-                    end
-                end
-            end
-        end
-    end
-
-    -- Construction de la table d'export
-    local exportData = {
-        timestamp = time(),
-        addon = "AuberdineExporter",
-        version = AuberdineExporterDB.version or GetAddonVersion(),
-        character = character,
-        recipes = recipes,
-        skills = freshSkills,
-        reputations = freshReputations,
-        inventory = charData.inventory or { equipment = {}, bags = {}, bank = { main = nil, bags = {} } },
-        consumables = charData.consumables or { items = {}, lastUpdate = 0 }
-    }
-
-    -- Génération du JSON (manuel, à plat)
-    local function escape(s)
-        return string.gsub(s, "[\"\\]", function(c)
-            if c == '\\' then return "\\\\" elseif c == '"' then return '\\"' end
-        end)
-    end
-    local function tableToSimpleJSON(t)
-        local out = "{"
-        local first = true
-        for k, v in pairs(t) do
-            if not first then out = out .. "," end
-            first = false
-            out = out .. '"' .. escape(tostring(k)) .. '":'
-            if type(v) == "table" then
-                -- Table d'objets ou de tableaux
-                local isArray = true
-                local idx = 1
-                for kk, _ in pairs(v) do
-                    if kk ~= idx then isArray = false break end
-                    idx = idx + 1
-                end
-                if isArray then
-                    out = out .. "["
-                    for i, vv in ipairs(v) do
-                        if i > 1 then out = out .. "," end
-                        if type(vv) == "string" then
-                            out = out .. '"' .. escape(vv) .. '"'
-                        else
-                            out = out .. tostring(vv)
-                        end
-                    end
-                    out = out .. "]"
-                else
-                    out = out .. tableToSimpleJSON(v)
-                end
-            elseif type(v) == "string" then
-                out = out .. '"' .. escape(v) .. '"'
-            else
-                out = out .. tostring(v)
-            end
-        end
-        out = out .. "}"
-        return out
-    end
-
-    -- Signature
-    local jsonNoSig = tableToSimpleJSON(exportData)
-    local signature = md5_sumhexa(jsonNoSig .. AuberdineExporterClientKey)
-    exportData.signature = signature
-    return tableToSimpleJSON(exportData)
-end
-
 -- Export CSV simple pour auberdine.eu
 function ExportToCSV()
     local csv = "Character,Realm,Level,Race,Class,Profession,ProfessionLevel,RecipeName\n"
@@ -2480,199 +2365,16 @@ function CreateExportFrame(exportData, format)
     frame.editBox:HighlightText()
 end
 
--- Main UI Frame (simplified but functional)
-local mainFrame = nil
 
-local function CreateMainFrame()
-    if mainFrame then
-        return mainFrame
-    end
-    
-    -- Create main frame
-    local frame = CreateFrame("Frame", "AuberdineExporterMainFrame", UIParent)
-    frame:SetSize(600, 600)
-    frame:SetPoint("CENTER")
-    frame:SetFrameStrata("DIALOG")
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-    frame:Hide()
-    
-    -- Background
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0, 0, 0, 0.8)
-    
-    -- Border
-    frame.border = CreateFrame("Frame", nil, frame, "DialogBorderTemplate")
-    
-    -- Title
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    frame.title:SetPoint("TOP", 0, -20)
-    frame.title:SetText("Auberdine Exporter")
-    frame.title:SetTextColor(1, 1, 1)
-    
-    -- Close button
-    frame.closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    frame.closeButton:SetPoint("TOPRIGHT", -5, -5)
-    
-    -- Buttons en haut - Disposition en 2 colonnes
-    -- Bouton Export Auberdine (colonne 1)
-    local exportButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    exportButton:SetSize(260, 35)
-    exportButton:SetPoint("TOPLEFT", 20, -60)
-    exportButton:SetText("Export Auberdine")
-    exportButton:SetScript("OnClick", function()
-        -- pcall : une donnée malformée (module tracker, table imbriquée)
-        -- afficherait sinon une popup d'erreur Lua brute au clic.
-        local ok, jsonData = pcall(ExportToJSON)
-        if not ok or not jsonData then
-            print("|cffff0000AuberdineExporter:|r Export impossible : " .. tostring(jsonData))
-            return
-        end
-        CreateExportFrame(jsonData, "JSON-AUBERDINE")
-    end)
-    
-    -- Bouton Export CSV (colonne 2)
-    local csvButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    csvButton:SetSize(260, 35)
-    csvButton:SetPoint("TOPLEFT", 300, -60)
-    csvButton:SetText("Export CSV")
-    csvButton:SetScript("OnClick", function()
-        local ok, csvData = pcall(ExportToCSV)
-        if not ok or not csvData then
-            print("|cffff0000AuberdineExporter:|r Export CSV impossible : " .. tostring(csvData))
-            return
-        end
-        CreateExportFrame(csvData, "CSV")
-    end)
-    
-    -- Ligne de séparation
-    local separator = frame:CreateTexture(nil, "ARTWORK")
-    separator:SetSize(560, 2)
-    separator:SetPoint("TOPLEFT", 20, -120)
-    separator:SetColorTexture(0.5, 0.5, 0.5, 0.8)
-    
-    -- Zone de texte scrollable en bas
-    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 20, -130)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 20)
-    
-    -- Content text dans le scroll frame
-    frame.content = CreateFrame("EditBox", nil, scrollFrame)
-    frame.content:SetMultiLine(true)
-    frame.content:SetFontObject("GameFontNormal")
-    frame.content:SetWidth(530)
-    frame.content:SetAutoFocus(false)
-    frame.content:EnableMouse(false)
-    frame.content:SetScript("OnEscapePressed", function() frame.content:ClearFocus() end)
-    scrollFrame:SetScrollChild(frame.content)
-    
-    -- Update content function
-    frame.UpdateContent = function()
-        local stats = GetStatistics()
-        local currentChar = GetCurrentCharacterKey()
-        local currentCharData = AuberdineExporterDB.characters[currentChar]
-        
-        local text = string.format(
-            "Auberdine Exporter - Statistiques Multi-Personnages\n\n" ..
-            "Personnages scannés: %d\n" ..
-            "Métiers au total: %d\n" ..
-            "Recettes collectées: %d\n" ..
-            "Challenge: auberdine-2025-recipe-export (fixe)\n\n" ..
-            "Personnage connecté: %s (%s)\n" ..
-            "Niveau: %d - Classe: %s\n" ..
-            "Realm: %s\n\n" ..
-            "Instructions d'utilisation:\n" ..
-            "1. Ouvrez vos fenêtres de métiers pour scanner automatiquement\n" ..
-            "2. Utilisez 'Export Auberdine' pour un export multi-personnages complet\n" ..
-            "3. Utilisez 'Export CSV' pour un format tableur\n\n" ..
-            "Commandes disponibles:\n" ..
-            "• /auberdine scan - Scanner tous les métiers manuellement\n" ..
-            "• /auberdine stats - Afficher les statistiques\n" ..
-            "• /auberdine chars - Lister tous les personnages\n" ..
-            "• /auberdine help - Aide complète\n" ..
-            "• /auberdine debug - Toggle mode debug",
-            stats.totalCharacters, stats.totalProfessions, stats.totalRecipes,
-            currentCharData and currentCharData.name or "Inconnu",
-            currentCharData and currentCharData.class or "Inconnue",
-            currentCharData and currentCharData.level or 0,
-            currentCharData and currentCharData.class or "Inconnue",
-            currentCharData and currentCharData.realm or "Inconnu"
-        )
-        
-        if stats.totalCharacters > 0 then
-            text = text .. "\n\nDétail par personnage:\n"
-            for charKey, charData in pairs(AuberdineExporterDB.characters) do
-                local charProfessions = 0
-                local charRecipes = 0
-                if charData.professions then
-                    for profName, profData in pairs(charData.professions) do
-                        charProfessions = charProfessions + 1
-                        if profData.recipes then
-                            for _ in pairs(profData.recipes) do charRecipes = charRecipes + 1 end
-                        end
-                    end
-                end
-                local equipped, bagItems, bankItems, consumables = 0, 0, 0, 0
-                if charData.inventory then
-                    if charData.inventory.equipment then
-                        for _ in pairs(charData.inventory.equipment) do equipped = equipped + 1 end
-                    end
-                    if charData.inventory.bags then
-                        for _, c in pairs(charData.inventory.bags) do
-                            if c.slots then for _ in pairs(c.slots) do bagItems = bagItems + 1 end end
-                        end
-                    end
-                    if charData.inventory.bank then
-                        if charData.inventory.bank.main and charData.inventory.bank.main.slots then
-                            for _ in pairs(charData.inventory.bank.main.slots) do bankItems = bankItems + 1 end
-                        end
-                        if charData.inventory.bank.bags then
-                            for _, c in pairs(charData.inventory.bank.bags) do
-                                if c.slots then for _ in pairs(c.slots) do bankItems = bankItems + 1 end end
-                            end
-                        end
-                    end
-                end
-                if charData.consumables and charData.consumables.items then
-                    for _ in pairs(charData.consumables.items) do consumables = consumables + 1 end
-                end
-                text = text .. string.format(
-                    "• %s (%s): %d métiers, %d recettes | %d équipés, %d sac, %d banque, %d consommables\n",
-                    charData.name, charData.class, charProfessions, charRecipes,
-                    equipped, bagItems, bankItems, consumables
-                )
-            end
-            
-            text = text .. "\nDétail par métier (tous personnages):\n"
-            for profName, profStats in pairs(stats.professionBreakdown) do
-                text = text .. string.format("• %s: %d recettes sur %d personnages\n", 
-                    profName, profStats.totalRecipes, profStats.characters)
-            end
-        end
-        
-        frame.content:SetText(text)
-    end
-    
-    mainFrame = frame
-    return frame
-end
-
+-- L'UI réelle vit dans UI/AuberdineMainFrame.lua (chargée AVANT ce
+-- fichier par le .toc). L'ancien « fallback simple frame » local était
+-- inatteignable et recréait une frame du même nom global
+-- AuberdineExporterMainFrame — supprimé.
 ToggleMainFrame = function()
     if AuberdineExporterUI and AuberdineExporterUI.ToggleMainFrame then
         AuberdineExporterUI:ToggleMainFrame()
     else
-        -- Fallback: use the built-in simple frame
-        local frame = CreateMainFrame()
-        if frame:IsShown() then
-            frame:Hide()
-        else
-            frame.UpdateContent()
-            frame:Show()
-        end
+        print("|cffff0000AuberdineExporter:|r Interface indisponible (UI/AuberdineMainFrame.lua non chargée).")
     end
 end
 
@@ -2799,11 +2501,9 @@ local function OnTradeSkillShow()
                             end
                         end
                     end
-                    -- 3) Fallback tooltip (stub par défaut → nil)
-                    if not spellID then
-                        spellID = GetSpellIDFromTooltip()
-                        if spellID then idSource = "tooltip" end
-                    end
+                    -- (l'ancien « fallback tooltip » était un stub qui
+                    -- renvoyait toujours nil — retiré, la résolution repose
+                    -- sur LibRecipes + liens)
                     if not idSource then idSource = "none" end
                     -- Rétablir la sélection précédente
                     if oldSelection and oldSelection > 0 and SelectTradeSkill then
@@ -2916,11 +2616,6 @@ local function OnCraftShow()
                                           tonumber(spellLink:match("craft:(%d+)"))
                                 if recipeID then idSource = "link" end
                             end
-                        end
-                        -- Fallback: tenter d'extraire l'ID via le tooltip si non trouvé
-                        if not recipeID then
-                            recipeID = GetSpellIDFromTooltip()
-                            if recipeID then idSource = "tooltip" end
                         end
                         if not idSource then idSource = "none" end
                         -- Rétablir la sélection précédente
@@ -3788,7 +3483,6 @@ AuberdineExporter.ToggleCharacterExport = ToggleCharacterExport
 AuberdineExporter.DeleteCharacter = DeleteCharacter
 AuberdineExporter.GetExportableCharacters = GetExportableCharacters
 AuberdineExporter.ExportToJSON = ExportToJSON
-AuberdineExporter.ExportToSimpleJSON = ExportToSimpleJSON
 AuberdineExporter.ExportToCSV = ExportToCSV
 AuberdineExporter.CreateExportFrame = CreateExportFrame
 

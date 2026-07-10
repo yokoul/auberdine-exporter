@@ -946,10 +946,6 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     return frame
 end
 
-function AuberdineExporterUI:ShowExportFrame(exportType)
-    AuberdineExportUI:ShowExportFrame(exportType)
-end
-
 -- Récupère l'EditBox d'un StaticPopup de façon robuste.
 -- Dans les clients récents (Classic ERA 11508+), Blizzard wrap StaticPopup
 -- avec GameDialog et `self.editBox` n'est plus toujours directement exposé.
