@@ -2393,59 +2393,75 @@ function ExportToCSV()
     return csv
 end
 
+-- Fenêtre d'export : instance unique réutilisée. L'ancienne version
+-- recréait à CHAQUE clic une nouvelle frame du même nom global — les
+-- fenêtres s'empilaient sans jamais être libérées (fuite + spam visuel).
+local exportFrameInstance = nil
+
 function CreateExportFrame(exportData, format)
-    -- Create export window
-    local exportFrame = CreateFrame("Frame", "AuberdineExporterExportFrame", UIParent)
-    exportFrame:SetSize(500, 400)
-    exportFrame:SetPoint("CENTER")
-    exportFrame:SetFrameStrata("FULLSCREEN")
-    exportFrame:SetMovable(true)
-    exportFrame:EnableMouse(true)
-    exportFrame:RegisterForDrag("LeftButton")
-    exportFrame:SetScript("OnDragStart", exportFrame.StartMoving)
-    exportFrame:SetScript("OnDragStop", exportFrame.StopMovingOrSizing)
-    
-    -- Background
-    exportFrame.bg = exportFrame:CreateTexture(nil, "BACKGROUND")
-    exportFrame.bg:SetAllPoints()
-    exportFrame.bg:SetColorTexture(0, 0, 0, 0.9)
-    
-    -- Border
-    exportFrame.border = CreateFrame("Frame", nil, exportFrame, "DialogBorderTemplate")
-    
-    -- Title
-    exportFrame.title = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    exportFrame.title:SetPoint("TOP", 0, -10)
-    exportFrame.title:SetText("Export " .. format:upper())
-    
-    -- Scroll frame for text
-    local scrollFrame = CreateFrame("ScrollFrame", nil, exportFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 10, -40)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
-    
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    editBox:SetFontObject("ChatFontNormal")
-    editBox:SetWidth(450)
-    editBox:SetText(exportData)
-    editBox:SetCursorPosition(0)
-    editBox:SetScript("OnEscapePressed", function() exportFrame:Hide() end)
-    scrollFrame:SetScrollChild(editBox)
-    
-    -- Close button
-    local closeButton = CreateFrame("Button", nil, exportFrame, "UIPanelCloseButton")
-    closeButton:SetPoint("TOPRIGHT", -5, -5)
-    closeButton:SetScript("OnClick", function() exportFrame:Hide() end)
-    
-    -- Instructions
-    local instructions = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    instructions:SetPoint("BOTTOM", 0, 10)
-    instructions:SetText("Sélectionnez tout (Ctrl+A) puis copiez (Ctrl+C)")
-    instructions:SetTextColor(1, 1, 0)
-    
-    exportFrame:Show()
-    editBox:SetFocus()
-    editBox:HighlightText()
+    if not exportFrameInstance then
+        local exportFrame = CreateFrame("Frame", "AuberdineExporterExportFrame", UIParent)
+        exportFrame:SetSize(500, 400)
+        exportFrame:SetPoint("CENTER")
+        exportFrame:SetFrameStrata("FULLSCREEN")
+        exportFrame:SetMovable(true)
+        exportFrame:EnableMouse(true)
+        exportFrame:RegisterForDrag("LeftButton")
+        exportFrame:SetScript("OnDragStart", exportFrame.StartMoving)
+        exportFrame:SetScript("OnDragStop", exportFrame.StopMovingOrSizing)
+
+        -- Échap + clamp + auto-scale petits écrans (l'OnEscapePressed de
+        -- l'EditBox ne marchait que si elle avait le focus clavier)
+        if AuberdineExporterUI and AuberdineExporterUI.ApplyFrameBehavior then
+            AuberdineExporterUI.ApplyFrameBehavior(exportFrame, "AuberdineExporterExportFrame")
+        end
+
+        -- Background
+        exportFrame.bg = exportFrame:CreateTexture(nil, "BACKGROUND")
+        exportFrame.bg:SetAllPoints()
+        exportFrame.bg:SetColorTexture(0, 0, 0, 0.9)
+
+        -- Border
+        exportFrame.border = CreateFrame("Frame", nil, exportFrame, "DialogBorderTemplate")
+
+        -- Title
+        exportFrame.title = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        exportFrame.title:SetPoint("TOP", 0, -10)
+
+        -- Scroll frame for text
+        local scrollFrame = CreateFrame("ScrollFrame", nil, exportFrame, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 10, -40)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
+
+        local editBox = CreateFrame("EditBox", nil, scrollFrame)
+        editBox:SetMultiLine(true)
+        editBox:SetFontObject("ChatFontNormal")
+        editBox:SetWidth(450)
+        editBox:SetScript("OnEscapePressed", function() exportFrame:Hide() end)
+        scrollFrame:SetScrollChild(editBox)
+        exportFrame.editBox = editBox
+
+        -- Close button
+        local closeButton = CreateFrame("Button", nil, exportFrame, "UIPanelCloseButton")
+        closeButton:SetPoint("TOPRIGHT", -5, -5)
+        closeButton:SetScript("OnClick", function() exportFrame:Hide() end)
+
+        -- Instructions
+        local instructions = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        instructions:SetPoint("BOTTOM", 0, 10)
+        instructions:SetText("Sélectionnez tout (Ctrl+A) puis copiez (Ctrl+C)")
+        instructions:SetTextColor(1, 1, 0)
+
+        exportFrameInstance = exportFrame
+    end
+
+    local frame = exportFrameInstance
+    frame.title:SetText("Export " .. format:upper())
+    frame.editBox:SetText(exportData)
+    frame.editBox:SetCursorPosition(0)
+    frame:Show()
+    frame.editBox:SetFocus()
+    frame.editBox:HighlightText()
 end
 
 -- Main UI Frame (simplified but functional)
@@ -3277,6 +3293,31 @@ local function HandleSlashCommand(msg)
         else
             print("|cffff0000AuberdineExporter:|r Size function not available!")
         end
+    elseif command == "scale" then
+        -- /ae scale          → affiche l'échelle courante
+        -- /ae scale 0.8      → force une échelle (0.5 à 1.5), persistant
+        -- /ae scale auto     → revient à l'auto-ajustement petits écrans
+        local arg = args[2] and string.lower(args[2]) or nil
+        AuberdineExporterDB.settings = AuberdineExporterDB.settings or {}
+        if not arg then
+            local cur = AuberdineExporterDB.settings.uiScale
+            print("|cff00ff00AuberdineExporter:|r Échelle de l'interface : "
+                .. (cur and string.format("%.2f (manuelle)", cur) or "auto (ajustée à l'écran)"))
+            print("  /ae scale 0.8 pour forcer, /ae scale auto pour revenir à l'automatique")
+        elseif arg == "auto" then
+            AuberdineExporterDB.settings.uiScale = nil
+            if AuberdineExporterUI and AuberdineExporterUI.RescaleAll then AuberdineExporterUI.RescaleAll() end
+            print("|cff00ff00AuberdineExporter:|r Échelle automatique réactivée.")
+        else
+            local v = tonumber(arg)
+            if not v or v < 0.5 or v > 1.5 then
+                print("|cffff0000AuberdineExporter:|r Valeur invalide (attendu : 0.5 à 1.5, ou auto).")
+            else
+                AuberdineExporterDB.settings.uiScale = v
+                if AuberdineExporterUI and AuberdineExporterUI.RescaleAll then AuberdineExporterUI.RescaleAll() end
+                print(string.format("|cff00ff00AuberdineExporter:|r Échelle fixée à %.2f.", v))
+            end
+        end
     elseif command == "minimap" then
         if AuberdineMinimapButton and AuberdineMinimapButton.button then
             if AuberdineMinimapButton.button:IsShown() then
@@ -3663,6 +3704,7 @@ local function HandleSlashCommand(msg)
         print("  /auberdine localsnapshot - Forcer un snapshot local complet (sacs+banque, non exporté)")
         print("  /auberdine recipes - Afficher toutes les recettes avec IDs")
         print("  /auberdine stats - Afficher les statistiques dans le chat")
+        print("  /auberdine scale <0.5-1.5|auto> - Taille de l'interface (auto = ajustée à l'écran)")
         print("")
         print("|cffff8000=== SUIVI DE GUILDE (v1.5.0) ===|r")
         print("  /auberdine guild - Résumé de la guilde courante (membres, journal, taille export)")

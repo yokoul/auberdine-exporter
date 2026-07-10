@@ -6,7 +6,56 @@ function AuberdineExporterUI:Initialize()
     self.isInitialized = true
 end
 
+-- ─── Adaptation petits écrans ────────────────────────────────────────
+-- L'écran logique de WoW fait 768/uiScale points de haut : à uiScale 1,
+-- une fenêtre de 700 points couvre 91% de la hauteur quel que soit le
+-- moniteur — d'où les retours « l'addon prend toute la place ».
+-- ApplyFrameBehavior pose sur chaque fenêtre de l'addon :
+--   1. un auto-scale borné : la fenêtre ne dépasse ni ~80% de la hauteur
+--      ni ~85% de la largeur utiles (plancher 0.5, jamais agrandie) ;
+--   2. le respect d'un override manuel persistant (/ae scale 0.8|auto) ;
+--   3. SetClampedToScreen : impossible de la faire sortir de l'écran ;
+--   4. la fermeture par Échap via UISpecialFrames — l'ancien
+--      OnKeyDown + SetPropagateKeyboardInput fermait la fenêtre ET
+--      ouvrait le menu Blizzard en même temps (touche propagée).
+AuberdineExporterUI.scaledFrames = {}
+
+function AuberdineExporterUI.ComputeFrameScale(frameWidth, frameHeight)
+    local settings = AuberdineExporterDB and AuberdineExporterDB.settings
+    local override = settings and settings.uiScale
+    if type(override) == "number" and override > 0 then
+        return math.max(0.5, math.min(1.5, override))
+    end
+    local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+    if not w or w == 0 or not frameWidth or frameWidth == 0 then return 1 end
+    local scale = math.min(1, (h * 0.80) / frameHeight, (w * 0.85) / frameWidth)
+    return math.max(0.5, scale)
+end
+
+function AuberdineExporterUI.ApplyFrameBehavior(frame, globalName)
+    frame:SetClampedToScreen(true)
+    frame.abBaseWidth, frame.abBaseHeight = frame:GetWidth(), frame:GetHeight()
+    frame:SetScale(AuberdineExporterUI.ComputeFrameScale(frame.abBaseWidth, frame.abBaseHeight))
+    table.insert(AuberdineExporterUI.scaledFrames, frame)
+    if globalName then
+        tinsert(UISpecialFrames, globalName)
+    end
+end
+
+-- Ré-applique l'échelle sur toutes les fenêtres connues (après /ae scale).
+function AuberdineExporterUI.RescaleAll()
+    for _, f in ipairs(AuberdineExporterUI.scaledFrames) do
+        f:SetScale(AuberdineExporterUI.ComputeFrameScale(f.abBaseWidth, f.abBaseHeight))
+    end
+end
+
 function AuberdineExporterUI:CreateAccountKeyEditFrame()
+    -- Réutiliser l'instance existante : la recréation à chaque clic
+    -- empilait une nouvelle fenêtre du même nom global par-dessus
+    -- l'ancienne (jamais libérée).
+    if self.accountKeyEditFrame then
+        return self.accountKeyEditFrame
+    end
     -- Créer une fenêtre pour éditer l'accountKey
     local editFrame = CreateFrame("Frame", "AuberdineAccountKeyEditFrame", UIParent)
     editFrame:SetSize(450, 220)
@@ -17,15 +66,9 @@ function AuberdineExporterUI:CreateAccountKeyEditFrame()
     editFrame:RegisterForDrag("LeftButton")
     editFrame:SetScript("OnDragStart", editFrame.StartMoving)
     editFrame:SetScript("OnDragStop", editFrame.StopMovingOrSizing)
-    
-    -- Gestion de la touche ESC
-    editFrame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:Hide()
-        end
-    end)
-    editFrame:SetPropagateKeyboardInput(true)
-    editFrame:EnableKeyboard(true)
+
+    -- Échap + clamp + auto-scale petits écrans
+    AuberdineExporterUI.ApplyFrameBehavior(editFrame, "AuberdineAccountKeyEditFrame")
     
     -- Background (même style que la fenêtre principale)
     editFrame.bg = editFrame:CreateTexture(nil, "BACKGROUND")
@@ -124,7 +167,8 @@ function AuberdineExporterUI:CreateAccountKeyEditFrame()
     editBox:SetScript("OnEnterPressed", function()
         confirmBtn:Click()
     end)
-    
+
+    self.accountKeyEditFrame = editFrame
     return editFrame
 end
 
@@ -144,15 +188,10 @@ function AuberdineExporterUI:CreateMainFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
-    
-    -- Gestion de la touche ESC
-    frame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:Hide()
-        end
-    end)
-    frame:SetPropagateKeyboardInput(true)
-    frame:EnableKeyboard(true)
+
+    -- Échap + clamp + auto-scale petits écrans (1000×700 = 91% de la
+    -- hauteur d'écran à uiScale 1 sans cela)
+    AuberdineExporterUI.ApplyFrameBehavior(frame, "AuberdineExporterMainFrame")
     
     -- Background
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
@@ -1151,15 +1190,9 @@ function AuberdineExporterUI:ShowHelpPopup()
     frame.closeBtn:SetPoint("TOPRIGHT", -5, -5)
     frame.closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
-    -- Gestion ESC
-    frame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:Hide()
-        end
-    end)
-    frame:SetPropagateKeyboardInput(true)
-    frame:EnableKeyboard(true)
-    
+    -- Échap + clamp + auto-scale petits écrans
+    AuberdineExporterUI.ApplyFrameBehavior(frame, "AuberdineHelpFrame")
+
     -- Zone de contenu avec scroll
     local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 15, -35)
