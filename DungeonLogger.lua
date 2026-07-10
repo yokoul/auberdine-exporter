@@ -18,6 +18,12 @@ local MAX_RUNS = 100 -- rétention : on borne la taille du manifeste
 -- État du run en cours (nil si hors donjon).
 local activeRun = nil
 
+-- true si c'est NOUS qui avons allumé LoggingCombat pour ce run. Ne jamais
+-- couper un log que le joueur (ou un autre addon type WCL/autolog) avait
+-- déjà activé avant l'entrée en donjon — sinon un enchaînement donjon→raid
+-- se retrouvait avec le combat log coupé, raid entier non loggué.
+local weEnabledLogging = false
+
 -- Clé personnage "Nom-Royaume".
 local function characterKey()
     local name = UnitName("player") or "unknown"
@@ -76,7 +82,12 @@ local function startRun()
         status = "in_progress",
     }
     upsertRun(activeRun)
-    LoggingCombat(true)
+    if LoggingCombat() then
+        weEnabledLogging = false   -- déjà actif avant nous : on n'y touchera pas
+    else
+        LoggingCombat(true)
+        weEnabledLogging = true
+    end
     print(string.format("|cff00ff00AuberdineExporter:|r log de donjon démarré (%s)", activeRun.instance))
 end
 
@@ -86,7 +97,10 @@ local function finishRun()
     activeRun.endedAt = time()
     activeRun.status = "complete"
     upsertRun(activeRun)
-    LoggingCombat(false)
+    if weEnabledLogging then
+        LoggingCombat(false)
+        weEnabledLogging = false
+    end
     print(string.format("|cff00ff00AuberdineExporter:|r log de donjon terminé (%s)", activeRun.instance))
     activeRun = nil
 end

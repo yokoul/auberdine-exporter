@@ -28,6 +28,7 @@ AuberdineExporter.LootTracker = LootTracker
 local PRUNE_AFTER  = 30 * 24 * 3600   -- oubli des loots de +30 jours (payload borné)
 local BOSS_WINDOW  = 10 * 60          -- un loot est rattaché au boss si tué il y a <10 min
 local MAX_LOOTS    = 600              -- garde-fou de taille de la SavedVariable
+local GARGUL_MATCH_WINDOW = 10 * 60   -- fusion gargul↔chat : même item/destinataire à ±10 min
 
 -- Couleur du lien d'item → qualité WoW. Locale-proof et indépendant du cache
 -- (GetItemInfo peut renvoyer nil pour un objet pas encore chargé ; la couleur,
@@ -217,10 +218,14 @@ local function HandleLootMessage(msg)
 
     local ts = time()
     local boss = currentBoss
-    local bossName, bossId = nil, 0
+    local bossName, bossId, bossKill = nil, 0, nil
     if boss and (ts - (boss.at or 0)) <= BOSS_WINDOW then
         bossName = boss.name
         bossId = boss.id or 0
+        -- Transmis au serveur : un loot ramassé après un WIPE (butin de
+        -- trash, corps relevé tard) ne doit pas être recoupé comme si le
+        -- boss était mort à cet horodatage.
+        bossKill = boss.success
     end
 
     local name, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
@@ -233,6 +238,7 @@ local function HandleLootMessage(msg)
         itemLink     = item.itemLink,
         itemQuality  = item.quality,
         bossName     = bossName,
+        bossKill     = bossKill,
         instanceName = name,
         instanceId   = instanceID or 0,
         lootedAt     = ts,
@@ -269,7 +275,25 @@ local function HarvestGargul()
                     if lw:find("disenchant") or lw:find("_disenchant") then disposition = "disenchanted" end
                     if h.isBankItem or h.OS == "BANK" then disposition = "banked" end
 
-                    local uid = LootUid(who, item.itemId, 0, ts)
+                    -- Fusion avec la capture chat : le même drop physique a
+                    -- déjà (le plus souvent) une entrée source=chat dont
+                    -- l'uid inclut le bossId et l'heure exacte du message —
+                    -- impossible de recomposer cette clé ici (Gargul a son
+                    -- propre horodatage, décalé par la décision d'attribution).
+                    -- On cherche donc l'entrée existante correspondante
+                    -- (même item, même destinataire, ±10 min) et on la
+                    -- complète au lieu de créer un doublon côté serveur.
+                    local d = EnsureDB()
+                    local strippedWho = StripRealm(who)
+                    local uid = nil
+                    for k, v in pairs(d.items) do
+                        if v.itemId == item.itemId and v.recipient == strippedWho
+                           and math.abs((v.lootedAt or 0) - ts) <= GARGUL_MATCH_WINDOW then
+                            uid = k
+                            break
+                        end
+                    end
+                    uid = uid or LootUid(who, item.itemId, 0, ts)
                     RecordLoot({
                         lootUid      = uid,
                         recipient    = StripRealm(who),
@@ -319,6 +343,7 @@ function LootTracker:GetExportData()
                 itemLink    = it.itemLink,
                 itemQuality = it.itemQuality,
                 bossName    = it.bossName,
+                bossKill    = it.bossKill,
                 instanceName= it.instanceName,
                 instanceId  = it.instanceId,
                 lootedAt    = (it.lootedAt or now) * 1000,  -- epoch MS (aligné raid_analyses)
@@ -359,8 +384,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
         currentBoss = { id = encounterID, name = encounterName, at = time() }
     elseif event == "ENCOUNTER_END" then
         local encounterID, encounterName, _, _, success = ...
-        -- Boss du dernier combat (réussi ou non) : le loot tombe juste après.
-        currentBoss = { id = encounterID, name = encounterName, at = time() }
+        -- Boss du dernier combat (réussi ou non) : le loot tombe juste
+        -- après. On mémorise le succès pour que le serveur puisse écarter
+        -- les loots post-wipe du recoupement avec les kills WCL.
+        currentBoss = { id = encounterID, name = encounterName, at = time(), success = (success == 1) }
     elseif event == "CHAT_MSG_LOOT" then
         local msg = ...
         HandleLootMessage(msg)

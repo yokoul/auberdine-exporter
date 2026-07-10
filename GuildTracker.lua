@@ -120,9 +120,15 @@ local function CurrentGuild()
     return EnsureGuild(key), key
 end
 
--- Demande au serveur une mise à jour du roster (rate-limité à 10s côté Blizzard)
+-- Demande au serveur une mise à jour du roster. Throttle client 10s aligné
+-- sur la limite serveur Blizzard : une rafale d'actions officiers (purge,
+-- promotions en chaîne) déclenchait des appels silencieusement ignorés.
+local lastRosterRequest = 0
 function GT:RequestRoster()
     if not IsInGuild() then return end
+    local now = GetTime()
+    if (now - lastRosterRequest) < 10 then return end
+    lastRosterRequest = now
     if C_GuildInfo and C_GuildInfo.GuildRoster then
         C_GuildInfo.GuildRoster()
     elseif GuildRoster then
@@ -130,7 +136,11 @@ function GT:RequestRoster()
     end
 end
 
--- Construit le roster courant depuis l'API, indexé par GUID (clé stable)
+-- Construit le roster courant depuis l'API, indexé par NOM (realm-strippé).
+-- Le nom est unique dans une guilde et disponible dès le premier scan —
+-- contrairement au GUID, vide pour les membres hors-ligne pas encore
+-- synchronisés : l'ancienne clé hybride guid-ou-nom changeait de forme
+-- entre deux scans et générait des JOIN/LEAVE fantômes dans le journal.
 local function BuildCurrentRoster()
     local result = {}
     local n = GetNumGuildMembers() or 0
@@ -138,7 +148,7 @@ local function BuildCurrentRoster()
         local name, rankName, rankIndex, level, _, zone, publicNote,
               _, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
         if name then
-            local key = (guid and guid ~= "") and guid or name
+            local key = StripRealm(name)
             result[key] = {
                 name = StripRealm(name),
                 class = classFile,
@@ -310,8 +320,39 @@ end
 
 local lastDiffTime = 0
 
+-- Migration une fois : les rosters historiques étaient indexés par GUID
+-- (repli nom). Réindexe par nom SANS passer par le diff — sinon chaque
+-- membre changerait de clé et apparaîtrait comme un faux JOIN.
+local function NormalizeRosterKeys(g)
+    local needsRekey = false
+    for k, m in pairs(g.roster or {}) do
+        if type(m) == "table" and m.name and k ~= m.name then
+            needsRekey = true
+            break
+        end
+    end
+    if not needsRekey then return end
+    local rekeyed = {}
+    for _, m in pairs(g.roster) do
+        if type(m) == "table" and m.name then rekeyed[m.name] = m end
+    end
+    g.roster = rekeyed
+end
+
 function GT:OnRosterUpdate(forced)
     if not IsValidRealm() or not IsInGuild() then return end
+    -- En combat de raid, un diff complet du roster (déco d'un membre…)
+    -- est du travail au pire moment : on repousse d'un cran.
+    if InCombatLockdown and InCombatLockdown() then
+        if not self.combatRetryPending then
+            self.combatRetryPending = true
+            C_Timer.After(10, function()
+                self.combatRetryPending = false
+                GT:OnRosterUpdate(forced)
+            end)
+        end
+        return
+    end
     local s = GuildSettings()
     if not s.enabled then return end
     local g = CurrentGuild()
@@ -322,6 +363,20 @@ function GT:OnRosterUpdate(forced)
 
     local newRoster = BuildCurrentRoster()
     if next(newRoster) == nil then return end
+
+    NormalizeRosterKeys(g)
+
+    -- Garde anti-roster-partiel : au login, le serveur peut livrer un
+    -- roster incomplet — diffé tel quel, chaque absent devenait un LEAVE
+    -- fantôme dans le journal public. Si le nouveau roster a perdu plus de
+    -- 40% des membres d'un coup, on attend le scan suivant.
+    if g.initialized then
+        local oldCount, newCount = 0, 0
+        for _ in pairs(g.roster) do oldCount = oldCount + 1 end
+        for _ in pairs(newRoster) do newCount = newCount + 1 end
+        if oldCount >= 10 and newCount < (oldCount * 0.6) then return end
+    end
+
     lastDiffTime = now
 
     local gname = GetGuildInfo("player")

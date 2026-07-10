@@ -110,13 +110,24 @@ local function RecordPlayer(name, data)
     local level = data.level
     if (not level or level < 1) and prev then level = prev.level end
 
+    -- Guilde : GetGuildInfo renvoie nil aussi bien « vraiment sans guilde »
+    -- que « pas encore chargé ». Quand la source est autoritaire
+    -- (data.guildKnown, unité visible), nil est une vraie valeur — sinon un
+    -- joueur qui a quitté sa guilde la traînerait indéfiniment au recensement.
+    local guild
+    if data.guildKnown then
+        guild = data.guild
+    else
+        guild = data.guild or (prev and prev.guild) or nil
+    end
+
     db.players[name] = {
         level   = level,
         class   = data.class or (prev and prev.class) or nil,
         race    = data.race or (prev and prev.race) or nil,
         faction = data.faction or (prev and prev.faction) or nil,
         zone    = data.zone or (prev and prev.zone) or nil,
-        guild   = data.guild or (prev and prev.guild) or nil,
+        guild   = guild,
         seenAt  = time(),
     }
     return prev == nil
@@ -145,6 +156,9 @@ local function CaptureUnit(unit)
         faction = FactionToken(unit),
         zone    = zone,
         guild   = GetGuildInfo(unit),  -- nil hors guilde
+        -- Unité visible = données de guilde chargées côté client : le nil
+        -- est alors autoritaire (cf. RecordPlayer).
+        guildKnown = (UnitIsVisible and UnitIsVisible(unit)) and true or false,
     })
 end
 
@@ -295,7 +309,20 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "NAME_PLATE_UNIT_ADDED" then
         CaptureUnit((...))
     elseif event == "GROUP_ROSTER_UPDATE" then
-        SweepVisible()
+        -- Debounce coalescé : en plein raid chaotique (morts, déco/reco,
+        -- remplacements pendant un wipe 40), cet event peut tirer plusieurs
+        -- fois par seconde — chaque tir relançait un balayage complet
+        -- nameplates+raid+cible, au pire moment. Un seul sweep 2s après
+        -- la dernière rafale suffit.
+        if not self.sweepPending then
+            self.sweepPending = true
+            C_Timer.After(2, function()
+                self.sweepPending = false
+                if CensusSettings().enabled and not (InCombatLockdown and InCombatLockdown()) then
+                    SweepVisible()
+                end
+            end)
+        end
     elseif event == "WHO_LIST_UPDATE" then
         HarvestWho()
     end

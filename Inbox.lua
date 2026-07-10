@@ -70,6 +70,15 @@ function AuberdineInbox.Process()
 
   local now = time()
 
+  -- Purge des marqueurs « vu » de plus de 90 jours : seule table de
+  -- l'addon qui grossissait sans plafond (l'uploader ne re-livre pas les
+  -- messages aussi anciens, les garder ne protège de rien).
+  for id, seenAt in pairs(seen) do
+    if (now - (tonumber(seenAt) or 0)) > 90 * 24 * 3600 then
+      seen[id] = nil
+    end
+  end
+
   -- Collecte les non-vus encore valides ; les expirés sont marqués vus sans
   -- affichage (purge douce).
   local pending = {}
