@@ -2010,8 +2010,13 @@ function ExportToJSON()
         end
     end
 
-    -- Fonction de conversion JSON améliorée avec échappement complet
+    -- Fonction de conversion JSON améliorée avec échappement complet.
+    -- Fast-path : la plupart des chaînes (dont le gros bloc Base64 du
+    -- wrapper) n'ont rien à échapper — un seul find au lieu de 5 gsub.
     local function escapeJSON(s)
+        if not string.find(s, '[\\"\n\r\t]') then
+            return s
+        end
         s = string.gsub(s, "\\", "\\\\")
         s = string.gsub(s, '"', '\\"')
         s = string.gsub(s, "\n", "\\n")
@@ -2041,26 +2046,29 @@ function ExportToJSON()
         return table.concat(result)
     end
     
-    local function tableToJSON(t, indent, excludeSignature)
-        indent = indent or 0
+    -- Sérialiseur JSON à tampon (table.concat) : l'ancienne version
+    -- accumulait `result = result .. …` en boucle ET en récursion — coût
+    -- quadratique sur les gros exports, rejoué à CHAQUE déconnexion via
+    -- PersistUploaderExport → lag de logout perceptible en multi-persos.
+    -- Sortie strictement identique (clés triées, indentation, tableaux).
+    local appendJSON
+    appendJSON = function(buf, t, indent, excludeSignature)
         local spacing = string.rep("  ", indent)
-        local result = "{\n"
-        local pairs_count = 0
-        
+        buf[#buf + 1] = "{\n"
+
         -- Ordonner les clés pour une sortie stable
         local keys = {}
         for k in pairs(t) do
             if not excludeSignature or k ~= "signature" then
-                table.insert(keys, k)
+                keys[#keys + 1] = k
             end
         end
         table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-        
+
         for i, k in ipairs(keys) do
             local v = t[k]
-            pairs_count = pairs_count + 1
-            result = result .. spacing .. "  \"" .. escapeJSON(tostring(k)) .. "\": "
-            
+            buf[#buf + 1] = spacing .. "  \"" .. escapeJSON(tostring(k)) .. "\": "
+
             if type(v) == "table" then
                 -- Vérifier si c'est un tableau ou un objet
                 local isArray = true
@@ -2072,46 +2080,49 @@ function ExportToJSON()
                         break
                     end
                 end
-                
+
                 if isArray and arrayCount > 0 then
-                    result = result .. "[\n"
+                    buf[#buf + 1] = "[\n"
                     for j = 1, arrayCount do
-                        result = result .. spacing .. "    "
+                        buf[#buf + 1] = spacing .. "    "
                         if type(v[j]) == "table" then
-                            result = result .. tableToJSON(v[j], indent + 2, excludeSignature)
+                            appendJSON(buf, v[j], indent + 2, excludeSignature)
                         elseif type(v[j]) == "string" then
-                            result = result .. '"' .. escapeJSON(v[j]) .. '"'
+                            buf[#buf + 1] = '"' .. escapeJSON(v[j]) .. '"'
                         else
-                            result = result .. tostring(v[j])
+                            buf[#buf + 1] = tostring(v[j])
                         end
-                        if j < arrayCount then result = result .. "," end
-                        result = result .. "\n"
+                        buf[#buf + 1] = (j < arrayCount) and ",\n" or "\n"
                     end
-                    result = result .. spacing .. "  ]"
+                    buf[#buf + 1] = spacing .. "  ]"
                 else
                     -- Table vide ou objet
                     local isEmpty = true
                     for _ in pairs(v) do isEmpty = false break end
                     if isEmpty then
-                        result = result .. "{}"
+                        buf[#buf + 1] = "{}"
                     else
-                        result = result .. tableToJSON(v, indent + 1, excludeSignature)
+                        appendJSON(buf, v, indent + 1, excludeSignature)
                     end
                 end
             elseif type(v) == "string" then
-                result = result .. '"' .. escapeJSON(v) .. '"'
+                buf[#buf + 1] = '"' .. escapeJSON(v) .. '"'
             elseif type(v) == "boolean" then
-                result = result .. (v and "true" or "false")
+                buf[#buf + 1] = (v and "true" or "false")
             else
-                result = result .. tostring(v)
+                buf[#buf + 1] = tostring(v)
             end
-            
-            if i < #keys then result = result .. "," end
-            result = result .. "\n"
+
+            buf[#buf + 1] = (i < #keys) and ",\n" or "\n"
         end
-        
-        result = result .. spacing .. "}"
-        return result
+
+        buf[#buf + 1] = spacing .. "}"
+    end
+
+    local function tableToJSON(t, indent, excludeSignature)
+        local buf = {}
+        appendJSON(buf, t, indent or 0, excludeSignature)
+        return table.concat(buf)
     end
 
     -- NOUVELLE APPROCHE : Base64 pour éviter les problèmes de formatage JSON
