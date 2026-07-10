@@ -3,7 +3,7 @@
 # Script de création du ZIP de release pour CurseForge
 # Usage: ./create-release.sh
 
-VERSION="1.7.4"
+VERSION="1.7.5"
 ADDON_NAME="AuberdineExporter"
 BUILD_DIR="build"
 RELEASE_DIR="$BUILD_DIR/$ADDON_NAME"
@@ -26,10 +26,9 @@ cp "Inbox.lua" "$RELEASE_DIR/"
 cp "AuberdineExporter.toc" "$RELEASE_DIR/"
 cp "LICENSE" "$RELEASE_DIR/"
 
-# Interface utilisateur
+# Interface utilisateur (AuberdineExportFrame.lua supprimé en 1.7.5 — code mort)
 mkdir -p "$RELEASE_DIR/UI"
 cp "UI/AuberdineMainFrame.lua" "$RELEASE_DIR/UI/"
-cp "UI/AuberdineExportFrame.lua" "$RELEASE_DIR/UI/"
 cp "UI/AuberdineMinimapButton.lua" "$RELEASE_DIR/UI/"
 
 # Icônes (seulement les principales, pas les variantes 'a')

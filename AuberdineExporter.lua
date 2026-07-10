@@ -1755,11 +1755,13 @@ AuberdineExporter.RecomputeConsumables = function(self) return RecomputeConsumab
 AuberdineExporter.ScanLocalSnapshotBags = function(self) return ScanLocalSnapshotBags(GetCurrentCharacterKey()) end
 AuberdineExporter.ScanLocalSnapshotBank = function(self) return ScanLocalSnapshotBank(GetCurrentCharacterKey()) end
 
--- Implémentation MD5 simplifiée pour WoW Classic
--- Utilise une approche compatible avec toutes les versions de WoW
+-- ATTENTION : malgré son nom (conservé pour ne pas casser le format
+-- d'échange avec le serveur), ceci n'est PAS du MD5 et n'a AUCUNE
+-- propriété cryptographique — c'est un simple checksum multiplicatif
+-- (djb2-like, 3 passes) qui détecte les corruptions accidentelles.
+-- Le secret AuberdineExporterChallenge est de toute façon lisible dans
+-- ce fichier : la validation qui compte se fait côté serveur.
 local function md5_sumhexa(s)
-    -- Pour WoW Classic, on utilise un hash simplifié mais sécurisé
-    -- Basé sur une fonction de hash simple mais efficace
     local function simpleHash(str)
         local hash = 5381
         for i = 1, #str do
