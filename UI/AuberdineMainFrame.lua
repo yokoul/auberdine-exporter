@@ -248,12 +248,12 @@ function AuberdineExporterUI:CreateMainFrame()
     exportBtn:SetScript("OnClick", function()
         -- pcall : une erreur profonde d'export afficherait sinon une popup
         -- d'erreur Lua brute au clic.
-        local ok, jsonData = pcall(ExportToJSON)
+        local ok, jsonData = pcall(AuberdineExporter.ExportToJSON)
         if not ok or not jsonData then
             print("|cffff0000AuberdineExporter:|r Export impossible : " .. tostring(jsonData))
             return
         end
-        CreateExportFrame(jsonData, "Auberdine")
+        AuberdineExporter.CreateExportFrame(jsonData, "Auberdine")
     end)
     
     -- Export CSV button
@@ -262,12 +262,12 @@ function AuberdineExporterUI:CreateMainFrame()
     csvBtn:SetSize(160, 30)
     csvBtn:SetText("Export CSV")
     csvBtn:SetScript("OnClick", function()
-        local ok, csvData = pcall(ExportToCSV)
+        local ok, csvData = pcall(AuberdineExporter.ExportToCSV)
         if not ok or not csvData then
             print("|cffff0000AuberdineExporter:|r Export CSV impossible : " .. tostring(csvData))
             return
         end
-        CreateExportFrame(csvData, "CSV")
+        AuberdineExporter.CreateExportFrame(csvData, "CSV")
     end)
     
     -- Clear Cache button
@@ -1002,8 +1002,8 @@ StaticPopupDialogs["AUBERDINE_EDIT_GROUP"] = {
         local editBox = GetPopupEditBox(self)
         local newGroup = editBox and editBox:GetText() or nil
         if newGroup and newGroup ~= "" and data and data.charKey then
-            if SetAccountGroup then
-                SetAccountGroup(data.charKey, newGroup)
+            if AuberdineExporter.SetAccountGroup then
+                AuberdineExporter.SetAccountGroup(data.charKey, newGroup)
                 print(string.format("|cff00ff00AuberdineExporter:|r Groupe de %s changé vers '%s'",
                     AuberdineExporterDB.characters[data.charKey] and AuberdineExporterDB.characters[data.charKey].name or data.charKey, newGroup))
                 -- Recharger l'interface
@@ -1312,7 +1312,7 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
     local unknownCharacters = {}
     
     for charKey, charData in pairs(AuberdineExporterDB.characters) do
-        local charSettings = InitializeCharacterSettings and InitializeCharacterSettings(charKey) or {}
+        local charSettings = AuberdineExporter.InitializeCharacterSettings and AuberdineExporter.InitializeCharacterSettings(charKey) or {}
         local charType = charSettings.characterType or "main"
         
         local charInfo = {
@@ -1477,8 +1477,8 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
                     typeInfo.color[2] * 255, 
                     typeInfo.color[3] * 255)
                 info.func = function(self)
-                    if SetCharacterType then
-                        SetCharacterType(charInfo.key, self.value)
+                    if AuberdineExporter.SetCharacterType then
+                        AuberdineExporter.SetCharacterType(charInfo.key, self.value)
                         UIDropDownMenu_SetText(card.roleDropdown, self.text)
                         CloseDropDownMenus()
                         
@@ -1525,10 +1525,10 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         card.exportBtn:SetSize(14, 14)
         card.exportBtn:SetPoint("TOPRIGHT", -4, -4)
         card.exportBtn:SetScript("OnClick", function()
-            if ToggleCharacterExport then
-                ToggleCharacterExport(charInfo.key)
+            if AuberdineExporter.ToggleCharacterExport then
+                AuberdineExporter.ToggleCharacterExport(charInfo.key)
                 -- Mettre à jour l'icône
-                local newSettings = InitializeCharacterSettings and InitializeCharacterSettings(charInfo.key) or {}
+                local newSettings = AuberdineExporter.InitializeCharacterSettings and AuberdineExporter.InitializeCharacterSettings(charInfo.key) or {}
                 if newSettings.exportEnabled ~= false then
                     card.exportIcon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
                 else
@@ -1550,8 +1550,8 @@ function AuberdineExporterUI:CreateCharacterCardLayout(content, parentFrame)
         card.deleteBtn:SetScript("OnClick", function()
             -- Demander confirmation avant suppression
             AuberdineExporterUI:ShowDeleteConfirmation(charInfo.key, charInfo.data.name, function()
-                if DeleteCharacter then
-                    DeleteCharacter(charInfo.key)
+                if AuberdineExporter.DeleteCharacter then
+                    AuberdineExporter.DeleteCharacter(charInfo.key)
                     -- Actualiser l'affichage
                     C_Timer.After(0.1, function()
                         if parentFrame and parentFrame.UpdateContent then
@@ -1695,7 +1695,7 @@ function AuberdineExporterUI:CreateSidebarHierarchy(sidebar)
     local charactersGrouped = {main = {}, alt = {}, bank = {}, mule = {}}
     
     for charKey, charData in pairs(AuberdineExporterDB.characters) do
-        local charSettings = InitializeCharacterSettings and InitializeCharacterSettings(charKey) or {}
+        local charSettings = AuberdineExporter.InitializeCharacterSettings and AuberdineExporter.InitializeCharacterSettings(charKey) or {}
         local charType = charSettings.characterType or "main"
         
         if charType == "main" then

@@ -4,6 +4,19 @@
 -- Global addon table
 AuberdineExporter = AuberdineExporter or {}
 
+-- Prédéclarations locales des fonctions de l'addon. Historiquement
+-- définies comme GLOBALES sous des noms génériques (ExportToJSON,
+-- GetStatistics, DeleteCharacter…) : pollution de _G et collision
+-- silencieuse possible avec tout addon utilisant les mêmes noms. Les
+-- définitions plus bas (« function ExportToJSON() ») assignent désormais
+-- ces locales ; l'inter-fichiers (UI) passe par AuberdineExporter.*
+-- (exposé en fin de fichier).
+local GetStatistics, InitializeCharacterSettings, SetCharacterType,
+      GetCharacterType, LinkCharacterToMain, SetAccountGroup,
+      GetAccountGroup, ListCharacterConfiguration, ToggleCharacterExport,
+      DeleteCharacter, GetExportableCharacters, ExportToJSON,
+      ExportToSimpleJSON, ExportToCSV, CreateExportFrame
+
 -- Public function to check if we're on the correct realm
 function AuberdineExporter:IsOnAuberdine()
     local realmName = GetRealmName()
@@ -138,48 +151,51 @@ local function IsProfessionValid(professionName)
     return validProfessions[professionName] ~= nil
 end
 
--- Stub pour GetCharacterSkills si non défini
-if not GetCharacterSkills then
-    function GetCharacterSkills()
-        local skills = {}
-        -- Extraire les compétences depuis l'API WoW
-        for i = 1, GetNumSkillLines() do
-            local skillName, header, isExpanded, skillRank, numTempPoints, skillModifier, skillMaxRank = GetSkillLineInfo(i)
-            if skillName and not header then
-                skills[skillName] = {
-                    name = skillName,
-                    rank = skillRank,
-                    maxRank = skillMaxRank,
-                    modifier = skillModifier or 0
-                }
-            end
+-- Compétences et réputations du personnage. LOCALES et non plus globales
+-- conditionnelles (« if not GetCharacterSkills then function … ») : sous
+-- des noms aussi génériques, un autre addon chargé avant nous définissant
+-- le même global remplaçait silencieusement NOTRE implémentation —
+-- données fausses ou vides exportées sans aucune erreur.
+local function GetCharacterSkills()
+    local skills = {}
+    -- Extraire les compétences depuis l'API WoW
+    for i = 1, GetNumSkillLines() do
+        local skillName, header, isExpanded, skillRank, numTempPoints, skillModifier, skillMaxRank = GetSkillLineInfo(i)
+        if skillName and not header then
+            skills[skillName] = {
+                name = skillName,
+                rank = skillRank,
+                maxRank = skillMaxRank,
+                modifier = skillModifier or 0
+            }
         end
-        return skills
     end
+    return skills
 end
 
--- Stub pour GetCharacterReputations si non défini
-if not GetCharacterReputations then
-    function GetCharacterReputations()
-        local reputations = {}
-        -- Extraire les réputations depuis l'API WoW
-        for i = 1, GetNumFactions() do
-            local name, description, standingID, barMin, barMax, barValue, atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep, isWatched, isChild, factionID = GetFactionInfo(i)
-            if name and not isHeader then
-                reputations[name] = {
-                    name = name,
-                    standingID = standingID,
-                    standing = _G["FACTION_STANDING_LABEL" .. standingID] or "Unknown",
-                    barMin = barMin,
-                    barMax = barMax,
-                    barValue = barValue,
-                    factionID = factionID
-                }
-            end
+local function GetCharacterReputations()
+    local reputations = {}
+    -- Extraire les réputations depuis l'API WoW
+    for i = 1, GetNumFactions() do
+        local name, description, standingID, barMin, barMax, barValue, atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep, isWatched, isChild, factionID = GetFactionInfo(i)
+        if name and not isHeader then
+            reputations[name] = {
+                name = name,
+                standingID = standingID,
+                standing = _G["FACTION_STANDING_LABEL" .. standingID] or "Unknown",
+                barMin = barMin,
+                barMax = barMax,
+                barValue = barValue,
+                factionID = factionID
+            }
         end
-        return reputations
     end
+    return reputations
 end
+
+-- Exposées sous le namespace de l'addon pour les autres modules/UI.
+AuberdineExporter.GetCharacterSkills = GetCharacterSkills
+AuberdineExporter.GetCharacterReputations = GetCharacterReputations
 
 -- Equipment slot mapping: WoW slot index → Blizzard API slot type
 local SLOT_MAPPING = {
@@ -3757,6 +3773,24 @@ SLASH_AUBERDINE1 = "/auberdine"
 SLASH_AUBERDINE2 = "/ae"
 SLASH_AUBERDINE3 = "/aubex"
 SlashCmdList["AUBERDINE"] = HandleSlashCommand
+
+-- Exposition namespace des fonctions locales consommées hors de ce
+-- fichier (UI/AuberdineMainFrame.lua) — remplace les anciens globaux.
+AuberdineExporter.GetStatistics = GetStatistics
+AuberdineExporter.InitializeCharacterSettings = InitializeCharacterSettings
+AuberdineExporter.SetCharacterType = SetCharacterType
+AuberdineExporter.GetCharacterType = GetCharacterType
+AuberdineExporter.LinkCharacterToMain = LinkCharacterToMain
+AuberdineExporter.SetAccountGroup = SetAccountGroup
+AuberdineExporter.GetAccountGroup = GetAccountGroup
+AuberdineExporter.ListCharacterConfiguration = ListCharacterConfiguration
+AuberdineExporter.ToggleCharacterExport = ToggleCharacterExport
+AuberdineExporter.DeleteCharacter = DeleteCharacter
+AuberdineExporter.GetExportableCharacters = GetExportableCharacters
+AuberdineExporter.ExportToJSON = ExportToJSON
+AuberdineExporter.ExportToSimpleJSON = ExportToSimpleJSON
+AuberdineExporter.ExportToCSV = ExportToCSV
+AuberdineExporter.CreateExportFrame = CreateExportFrame
 
 -- print("=== Commandes slash enregistrées ===")
 -- print("=== AuberdineExporter chargé complètement ===")
