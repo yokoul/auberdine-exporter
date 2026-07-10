@@ -573,7 +573,11 @@ local function ScanAllProfessions()
     local professionSlots = {prof1, prof2, archaeology, fishing, cooking, firstAid}
     local charKey = InitializeCharacterData()
     local scannedProfessions = {}
-    for i, professionIndex in ipairs(professionSlots) do
+    -- Boucle indexée 1..6 et PAS ipairs : GetProfessions() renvoie nil pour
+    -- les slots vides, et ipairs s'arrête au premier trou — un perso sans
+    -- 1er métier primaire ne voyait JAMAIS Pêche/Cuisine/Secourisme scannés.
+    for i = 1, 6 do
+        local professionIndex = professionSlots[i]
         if professionIndex then
             local name, icon, skillLevel, maxSkillLevel, numAbilities, spelloffset, skillLine, skillModifier = GetProfessionInfo(professionIndex)
             if name and IsProfessionValid(name) then
