@@ -1556,6 +1556,100 @@ local function ScanLocalSnapshotBank(charKey)
     return total
 end
 
+-- ─── Scans fusionnés export + snapshot ──────────────────────────────
+-- Avant : chaque BAG_UPDATE_DELAYED déclenchait ScanBags PUIS
+-- ScanLocalSnapshotBags — deux passages complets sur les MÊMES slots,
+-- chacun avec ses appels GetItemInfo. Le snapshot brut étant un
+-- sur-ensemble de l'export, on capture une seule fois (CaptureRawSlot)
+-- et on dérive l'enregistrement d'export compact du brut.
+
+-- Dérive l'enregistrement d'export (schéma BuildItemRecord) d'une capture brute.
+local function ExportRecordFromRaw(raw)
+    if not raw or not raw.itemId then return nil end
+    return {
+        id         = raw.itemId,
+        name       = raw.name,
+        link       = raw.link,
+        count      = raw.stackCount or 1,
+        quality    = raw.quality,
+        iLevel     = raw.itemLevel,
+        type       = raw.type,
+        subType    = raw.subType,
+        equipLoc   = raw.equipLoc,
+        classID    = raw.classID,
+        subClassID = raw.subClassID,
+    }
+end
+
+-- Scanne un conteneur une seule fois et renvoie (containerExport, containerRaw, nbExport).
+local function ScanContainerBoth(bagId)
+    local numSlots = GetBagNumSlots(bagId) or 0
+    local exp = { numSlots = numSlots, slots = {} }
+    local rawC = { numSlots = numSlots, slots = {} }
+    for slot = 1, numSlots do
+        local raw = CaptureRawSlot(bagId, slot)
+        if raw then
+            rawC.slots[slot] = raw
+            local rec = ExportRecordFromRaw(raw)
+            if rec then exp.slots[slot] = rec end
+        end
+    end
+    local n = 0
+    for _ in pairs(exp.slots) do n = n + 1 end
+    return exp, rawC, n
+end
+
+local function ScanBagsAndSnapshot(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local inventory = EnsureInventoryContainer(charKey)
+    local snap = EnsureLocalSnapshotContainer(charKey)
+    inventory.bags = {}
+    snap.bags = {}
+    local total = 0
+    for bagId = BAG_BACKPACK, BAG_LAST do
+        local exp, rawC, n = ScanContainerBoth(bagId)
+        inventory.bags[bagId] = exp
+        snap.bags[bagId] = rawC
+        total = total + n
+    end
+    if KEYRING_BAG and (GetBagNumSlots(KEYRING_BAG) or 0) > 0 then
+        local exp, rawC = ScanContainerBoth(KEYRING_BAG)
+        inventory.keyring = exp
+        snap.keyring = rawC
+    end
+    local now = time()
+    inventory.lastUpdate = now
+    snap.lastBagsUpdate = now
+    snap.lastUpdate = now
+    return total
+end
+
+local function ScanBankAndSnapshot(charKey)
+    if not charKey or not AuberdineExporterDB.characters[charKey] then return 0 end
+    local inventory = EnsureInventoryContainer(charKey)
+    local snap = EnsureLocalSnapshotContainer(charKey)
+    local bankExp = { main = nil, bags = {}, lastUpdate = time() }
+    local bankRaw = { main = nil, bags = {} }
+    local expMain, rawMain, total = ScanContainerBoth(BANK_MAIN)
+    bankExp.main = expMain
+    bankRaw.main = rawMain
+    for bagId = BANK_FIRST, BANK_LAST do
+        local exp, rawC, n = ScanContainerBoth(bagId)
+        if exp.numSlots and exp.numSlots > 0 then
+            bankExp.bags[bagId] = exp
+            bankRaw.bags[bagId] = rawC
+            total = total + n
+        end
+    end
+    inventory.bank = bankExp
+    snap.bank = bankRaw
+    local now = time()
+    inventory.lastUpdate = now
+    snap.lastBankUpdate = now
+    snap.lastUpdate = now
+    return total
+end
+
 -- Throttle pour éviter les scans intempestifs (BAG_UPDATE etc.)
 local inventoryScanState = {
     pendingBags = false,
@@ -1581,8 +1675,7 @@ local function RunBagsScan()
     if not IsValidRealm() then return end
     local charKey = InitializeCharacterData()
     if not charKey then return end
-    ScanBags(charKey)
-    ScanLocalSnapshotBags(charKey)
+    ScanBagsAndSnapshot(charKey)
     RecomputeConsumables(charKey)
     inventoryScanState.lastBagsScan = time()
 end
@@ -1606,8 +1699,7 @@ local function RunBankScan()
     if not inventoryScanState.bankOpen then return end
     local charKey = InitializeCharacterData()
     if not charKey then return end
-    ScanBank(charKey)
-    ScanLocalSnapshotBank(charKey)
+    ScanBankAndSnapshot(charKey)
     RecomputeConsumables(charKey)
     inventoryScanState.lastBankScan = time()
 end
@@ -1636,12 +1728,10 @@ local function ScanFullInventory()
     local charKey = InitializeCharacterData()
     if not charKey then return 0, 0, 0 end
     local equipCount = ScanEquipment(charKey)
-    local bagCount = ScanBags(charKey)
-    ScanLocalSnapshotBags(charKey)
+    local bagCount = ScanBagsAndSnapshot(charKey)
     local bankCount = 0
     if inventoryScanState.bankOpen then
-        bankCount = ScanBank(charKey)
-        ScanLocalSnapshotBank(charKey)
+        bankCount = ScanBankAndSnapshot(charKey)
     end
     local consumableCount = RecomputeConsumables(charKey)
     return equipCount, bagCount, bankCount, consumableCount
