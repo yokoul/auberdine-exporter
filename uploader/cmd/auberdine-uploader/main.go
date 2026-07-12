@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -104,7 +105,7 @@ func runTray(cfg config.Config) {
 		logger.Print("tray indisponible : recompilez avec « go build -tags tray ./cmd/auberdine-uploader »")
 		os.Exit(1)
 	}
-	a, err := app.New(cfg, nil, logger)
+	a, err := newAppWithPrompt(&cfg, logger)
 	if err != nil {
 		logger.Printf("démarrage: %v", err)
 		os.Exit(1)
@@ -118,7 +119,7 @@ func runDaemon(cfg config.Config) {
 	// Logger vers le fichier persistant (Windows) en plus de stderr : sans ça,
 	// une erreur de démarrage du démon serait muette sous Windows.
 	logger := log.New(logWriter(), "auberdine-uploader ", log.LstdFlags)
-	a, err := app.New(cfg, nil, logger)
+	a, err := newAppWithPrompt(&cfg, logger)
 	if err != nil {
 		logger.Printf("démarrage: %v", err)
 		os.Exit(1)
@@ -130,6 +131,18 @@ func runDaemon(cfg config.Config) {
 	if err := a.Run(ctx); err != nil && err != context.Canceled {
 		logger.Printf("arrêt: %v", err)
 	}
+}
+
+// newAppWithPrompt construit le démon ; si WoW est introuvable, offre à
+// l'utilisateur de désigner son dossier d'installation (dialogue natif,
+// Windows uniquement) avant de retenter — une installation hors des chemins
+// standards ne doit pas se solder par un échec muet.
+func newAppWithPrompt(cfg *config.Config, logger *log.Logger) (*app.App, error) {
+	a, err := app.New(*cfg, nil, logger)
+	if errors.Is(err, app.ErrWoWNotFound) && promptWoWPath(cfg, logger) {
+		a, err = app.New(*cfg, nil, logger)
+	}
+	return a, err
 }
 
 func runConnect(cfg config.Config) {
@@ -211,7 +224,7 @@ func runStatus(cfg config.Config) {
 	}
 	paths, ok := discovery.Detect(cfg.WoWPath)
 	if !ok {
-		fmt.Printf("WoW           : introuvable (configurez wowPath)\n")
+		fmt.Printf("WoW           : introuvable (configurez wowPath dans le fichier ci-dessus)\n")
 		return
 	}
 	fmt.Printf("WoW           : %s\n", paths.VersionDir)
@@ -221,8 +234,9 @@ func runStatus(cfg config.Config) {
 func runDoctor(cfg config.Config) {
 	paths, ok := discovery.Detect(cfg.WoWPath)
 	if !ok {
+		p, _ := config.Path()
 		fmt.Println("✗ Installation WoW Classic Era introuvable.")
-		fmt.Println("  → Renseignez wowPath dans la configuration.")
+		fmt.Printf("  → Renseignez wowPath (dossier _classic_era_) dans : %s\n", p)
 		os.Exit(1)
 	}
 	fmt.Printf("✓ Dossier de version : %s\n", paths.VersionDir)

@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -91,41 +91,46 @@ func atoi2(s string) int {
 	return n
 }
 
-// candidateVersionDirs renvoie les emplacements probables du dossier
-// "_classic_era_" selon l'OS.
-func candidateVersionDirs() []string {
-	var roots []string
-	switch runtime.GOOS {
-	case "windows":
-		for _, base := range []string{
-			`C:\Program Files (x86)\World of Warcraft`,
-			`C:\Program Files\World of Warcraft`,
-			`C:\World of Warcraft`,
-		} {
-			roots = append(roots, base)
-		}
-	case "darwin":
-		roots = append(roots,
-			"/Applications/World of Warcraft",
-		)
-		if home, err := os.UserHomeDir(); err == nil {
-			roots = append(roots, filepath.Join(home, "Applications", "World of Warcraft"))
-		}
-	default: // linux : préfixes Wine/Lutris/Steam-Proton courants
-		if home, err := os.UserHomeDir(); err == nil {
-			roots = append(roots,
-				filepath.Join(home, "Games", "world-of-warcraft", "drive_c", "Program Files (x86)", "World of Warcraft"),
-				filepath.Join(home, ".wine", "drive_c", "Program Files (x86)", "World of Warcraft"),
-				filepath.Join(home, ".local", "share", "lutris", "runners"),
-			)
-		}
-	}
+// versionDirName est le nom du dossier de version de WoW Classic Era.
+const versionDirName = "_classic_era_"
 
+// versionDirsFromRoots joint chaque racine WoW candidate au dossier de
+// version, en dédupliquant (les sources Windows — registre, product.db, scan
+// des lecteurs — se recoupent souvent).
+func versionDirsFromRoots(roots []string) []string {
 	var out []string
+	seen := map[string]bool{}
 	for _, r := range roots {
-		out = append(out, filepath.Join(r, "_classic_era_"))
+		dir := filepath.Join(r, versionDirName)
+		key := strings.ToLower(dir)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, dir)
 	}
 	return out
+}
+
+// NormalizeVersionDir résout un dossier désigné par l'utilisateur vers le
+// dossier de version : accepte le dossier _classic_era_ lui-même, la racine
+// "World of Warcraft", ou un dossier parent direct (ex. D:\Jeux quand WoW y
+// est installé).
+func NormalizeVersionDir(picked string) (string, bool) {
+	picked = filepath.Clean(picked)
+	if !isDir(picked) {
+		return "", false
+	}
+	if strings.EqualFold(filepath.Base(picked), versionDirName) {
+		return picked, true
+	}
+	if p := filepath.Join(picked, versionDirName); isDir(p) {
+		return p, true
+	}
+	if p := filepath.Join(picked, "World of Warcraft", versionDirName); isDir(p) {
+		return p, true
+	}
+	return "", false
 }
 
 // Detect tente de localiser l'installation. Si override est non vide, il est

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -37,6 +38,11 @@ const messageSyncInterval = 2 * time.Minute
 // en mémoire pour le parse) — garde-fou contre un fichier aberrant.
 const maxSavedVarsSize = 64 << 20
 
+// ErrWoWNotFound signale l'échec de la détection de l'installation WoW —
+// le point d'entrée (daemon/tray) peut alors proposer à l'utilisateur de
+// désigner le dossier lui-même plutôt que de mourir en silence.
+var ErrWoWNotFound = errors.New("installation WoW introuvable")
+
 // App est le démon de l'uploader.
 type App struct {
 	paths    discovery.Paths
@@ -64,7 +70,8 @@ type App struct {
 func New(cfg config.Config, up upload.Uploader, logger *log.Logger) (*App, error) {
 	paths, ok := discovery.Detect(cfg.WoWPath)
 	if !ok {
-		return nil, fmt.Errorf("installation WoW introuvable (configurez wowPath)")
+		cfgPath, _ := config.Path()
+		return nil, fmt.Errorf("%w (configurez wowPath dans %s)", ErrWoWNotFound, cfgPath)
 	}
 	st, err := LoadState()
 	if err != nil {
