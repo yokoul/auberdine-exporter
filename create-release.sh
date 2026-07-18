@@ -3,7 +3,13 @@
 # Script de création du ZIP de release pour CurseForge
 # Usage: ./create-release.sh
 
-VERSION="1.7.5"
+# Version lue depuis le .toc : une seule source de vérité (le hardcode a déjà
+# produit un zip 1.7.5 avec un contenu 1.7.6).
+VERSION="$(sed -n 's/^## Version: //p' AuberdineExporter.toc | tr -d '[:space:]')"
+if [ -z "$VERSION" ]; then
+    echo "❌ Version introuvable dans AuberdineExporter.toc" >&2
+    exit 1
+fi
 ADDON_NAME="AuberdineExporter"
 BUILD_DIR="build"
 RELEASE_DIR="$BUILD_DIR/$ADDON_NAME"
@@ -23,6 +29,8 @@ cp "Census.lua" "$RELEASE_DIR/"
 cp "DungeonLogger.lua" "$RELEASE_DIR/"
 cp "LootTracker.lua" "$RELEASE_DIR/"
 cp "Inbox.lua" "$RELEASE_DIR/"
+cp "Worldbuffs.lua" "$RELEASE_DIR/"
+cp "WorldbuffLogger.lua" "$RELEASE_DIR/"
 cp "AuberdineExporter.toc" "$RELEASE_DIR/"
 cp "LICENSE" "$RELEASE_DIR/"
 
