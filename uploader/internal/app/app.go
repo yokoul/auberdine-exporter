@@ -184,6 +184,7 @@ func (a *App) Run(ctx context.Context) error {
 	// avec un upload en cours.
 	a.tick(ctx)
 	a.syncMessages(ctx) // canal descendant : 1re récupération dès le démarrage
+	a.syncWorldbuffs(ctx)
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	ut := time.NewTicker(updateCheckInterval)
@@ -200,6 +201,7 @@ func (a *App) Run(ctx context.Context) error {
 			a.checkSelfUpdate(ctx)
 		case <-mt.C:
 			a.syncMessages(ctx)
+			a.syncWorldbuffs(ctx)
 		}
 	}
 }

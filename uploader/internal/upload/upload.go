@@ -54,6 +54,9 @@ type Uploader interface {
 	// AckMessages signale au serveur les messages déjà vus en jeu (lus de
 	// AuberdineExporterDB.seenMessages). Idempotent.
 	AckMessages(ctx context.Context, ids []string) error
+	// Worldbuffs récupère l'agenda des world buffs planifiés (flux descendant
+	// de données : site → uploader → SavedVariable → tooltip in-game).
+	Worldbuffs(ctx context.Context) (WorldbuffsFeed, error)
 }
 
 // StatusResponse est la réponse de GET /ingest/status.
@@ -128,6 +131,27 @@ type InboxMessage struct {
 type messagesResponse struct {
 	Success  bool           `json:"success"`
 	Messages []InboxMessage `json:"messages"`
+}
+
+// WorldbuffEntry est une pose de world buff planifiée. Mêmes champs que le
+// contrat de la SavedVariable AuberdineWorldbuffsFeed (Worldbuffs.lua).
+type WorldbuffEntry struct {
+	Buff    string `json:"buff"`
+	At      int64  `json:"at"` // epoch s (UTC)
+	Guild   string `json:"guild"`
+	Faction string `json:"faction"` // "HORDE" | "ALLIANCE" | ""
+}
+
+// WorldbuffsFeed est l'agenda renvoyé par GET /ingest/feed/worldbuffs.
+type WorldbuffsFeed struct {
+	GeneratedAt int64
+	Entries     []WorldbuffEntry
+}
+
+type worldbuffsResponse struct {
+	Success     bool             `json:"success"`
+	GeneratedAt int64            `json:"generatedAt"`
+	Worldbuffs  []WorldbuffEntry `json:"worldbuffs"`
 }
 
 // HTTPError porte le code HTTP et l'enveloppe d'erreur serveur. Les 4xx de
@@ -223,6 +247,19 @@ func (c *HTTPClient) AckMessages(ctx context.Context, ids []string) error {
 	}
 	_, err = c.do(ctx, http.MethodPost, "/ingest/messages/ack", payload)
 	return err
+}
+
+// Worldbuffs récupère l'agenda des world buffs (GET /ingest/feed/worldbuffs).
+func (c *HTTPClient) Worldbuffs(ctx context.Context) (WorldbuffsFeed, error) {
+	body, err := c.do(ctx, http.MethodGet, "/ingest/feed/worldbuffs", nil)
+	if err != nil {
+		return WorldbuffsFeed{}, err
+	}
+	var out worldbuffsResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return WorldbuffsFeed{}, fmt.Errorf("upload: réponse worldbuffs illisible: %w", err)
+	}
+	return WorldbuffsFeed{GeneratedAt: out.GeneratedAt, Entries: out.Worldbuffs}, nil
 }
 
 // SendExport poste l'export signé vers /ingest/export.

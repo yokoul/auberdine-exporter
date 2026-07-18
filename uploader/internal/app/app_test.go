@@ -18,6 +18,8 @@ type fakeUploader struct {
 	err      error
 	messages []upload.InboxMessage
 	acked    []string
+
+	worldbuffs upload.WorldbuffsFeed
 }
 
 type capturedRun struct {
@@ -54,6 +56,10 @@ func (f *fakeUploader) Messages(context.Context) ([]upload.InboxMessage, error) 
 func (f *fakeUploader) AckMessages(_ context.Context, ids []string) error {
 	f.acked = append(f.acked, ids...)
 	return nil
+}
+
+func (f *fakeUploader) Worldbuffs(context.Context) (upload.WorldbuffsFeed, error) {
+	return f.worldbuffs, nil
 }
 
 // setupWoW crée une arborescence WoW minimale avec une SavedVariable.
