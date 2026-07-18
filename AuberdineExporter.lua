@@ -3031,6 +3031,10 @@ local function HandleSlashCommand(msg)
                 print(string.format("|cff00ff00AuberdineExporter:|r Échelle fixée à %.2f.", v))
             end
         end
+    elseif command == "wb" or command == "worldbuffs" then
+        if AuberdineWorldbuffs and AuberdineWorldbuffs.PrintUpcoming then
+            AuberdineWorldbuffs.PrintUpcoming()
+        end
     elseif command == "minimap" then
         if AuberdineMinimapButton and AuberdineMinimapButton.button then
             if AuberdineMinimapButton.button:IsShown() then
@@ -3450,6 +3454,7 @@ local function HandleSlashCommand(msg)
         print("  /auberdine skills - Show all skill lines (debug)")
         print("  /auberdine autoscan - Toggle auto-scan on/off")
         print("  /auberdine minimap - Toggle minimap button")
+        print("  /auberdine wb - World buffs planifiés (agenda AWB)")
         print("  /auberdine reset - Reset all data")
         print("  /auberdine clear - Clear memory data (keep current character)")
         print("  /auberdine size - Show data size information")

@@ -55,11 +55,14 @@ function AuberdineMinimapButton:CreateButton()
         end
     end)
     
-    -- Tooltip
+    -- Tooltip (+ agenda des world buffs planifiés, cf. Worldbuffs.lua)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:SetText("Auberdine Exporter")
         GameTooltip:AddLine("Cliquez pour ouvrir l'interface")
+        if AuberdineWorldbuffs and AuberdineWorldbuffs.AddToTooltip then
+            AuberdineWorldbuffs.AddToTooltip(GameTooltip)
+        end
         GameTooltip:Show()
     end)
     

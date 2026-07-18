@@ -1,10 +1,10 @@
 
-## Interface: 11508
+## Interface: 11508, 11509
 ## Title: Auberdine Exporter
 ## Notes: Exporte recettes, skills, réputations, équipement, consommables et activités de guilde pour WoW Classic Era (Auberdine.eu)
 ## Author: yokoul - auberdine.eu
-## Version: 1.7.5
-## SavedVariables: AuberdineExporterDB, AuberdineUploaderInbox
+## Version: 1.7.6
+## SavedVariables: AuberdineExporterDB, AuberdineUploaderInbox, AuberdineWorldbuffsFeed
 ## IconTexture: Interface/AddOns/AuberdineExporter/UI/Icons/ab64.png
 
 # Libraries
@@ -32,3 +32,6 @@ LootTracker.lua
 
 # Boîte de réception (messages descendants site → uploader → addon)
 Inbox.lua
+
+# Agenda des world buffs planifiés (flux descendant AWB → tooltip minimap)
+Worldbuffs.lua
