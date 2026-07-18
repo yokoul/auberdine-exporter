@@ -1,0 +1,113 @@
+# CI de l'uploader (client Go).
+#
+# Deux rôles :
+#  1. Validation continue : vet + tests sur chaque changement de uploader/.
+#  2. Build Windows traçable : l'exécutable Windows est construit ici, dans une
+#     CI publique, avec exactement les flags de uploader/scripts/release.sh —
+#     prérequis de SignPath Foundation (signature Authenticode gratuite pour
+#     l'open source), qui ne signe que des artefacts issus d'un build traçable
+#     depuis le dépôt, jamais des binaires uploadés à la main.
+#
+# La signature SignPath est dormante tant que la candidature n'est pas acceptée :
+# le job `sign-windows` ne s'active que si la variable de dépôt
+# SIGNPATH_ORGANIZATION_ID est définie (Settings → Secrets and variables →
+# Actions → Variables), avec le secret SIGNPATH_API_TOKEN en face.
+# Voir uploader/README.md § « Signature Windows (Authenticode) ».
+
+name: uploader
+
+# Pas de filtre `paths` sur push : il est ignoré de façon peu fiable sur les
+# pushes de tag (aucun diff calculable), or c'est précisément le tag vX.Y.Z
+# qui doit produire l'exe candidat à la signature. Le build Go est court et
+# caché, tourner sur les commits addon-only est un coût acceptable.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths: ['uploader/**', '.github/workflows/uploader-build.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: uploader
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: uploader/go.mod
+          cache-dependency-path: uploader/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+
+  build-windows:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: uploader/go.mod
+          cache-dependency-path: uploader/go.sum
+
+      # Version injectée : le tag s'il y en a un, sinon dev-<sha court>.
+      # Mêmes flags que release.sh : -tags tray, -trimpath, -s -w, et
+      # -H windowsgui (sous-système PE GUI, indispensable — cf. release.sh).
+      - name: Build windows/amd64
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) VERSION="${GITHUB_REF#refs/tags/}" ;;
+            *)            VERSION="dev-${GITHUB_SHA::7}" ;;
+          esac
+          echo "version: $VERSION"
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -tags tray -trimpath \
+            -ldflags "-s -w -X github.com/yokoul/auberdine-exporter/uploader/internal/version.Version=$VERSION -H windowsgui" \
+            -o dist/auberdine-uploader-windows-amd64.exe \
+            ./cmd/auberdine-uploader
+
+      - name: Upload unsigned artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: auberdine-uploader-windows-amd64-unsigned
+          path: uploader/dist/auberdine-uploader-windows-amd64.exe
+          if-no-files-found: error
+
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+
+  # Signature Authenticode via SignPath — ne tourne que sur un tag de release
+  # et une fois la candidature SignPath Foundation acceptée (variable + secret
+  # configurés). L'exe signé repart en artefact ; release.sh le récupère pour
+  # refaire SHA256SUMS + signature ed25519 AVANT publication (l'Authenticode
+  # modifie le PE, donc l'empreinte change).
+  sign-windows:
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v') && vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Submit SignPath signing request
+        uses: signpath/github-action-submit-signing-request@v1.2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: auberdine-uploader
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ needs.build-windows.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auberdine-uploader-windows-amd64-signed
+          path: signed/auberdine-uploader-windows-amd64.exe
+          if-no-files-found: error

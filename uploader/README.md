@@ -39,6 +39,38 @@ natif sur macOS/Windows) :
 go build -tags tray -o auberdine-uploader ./cmd/auberdine-uploader
 ```
 
+## Signature Windows (Authenticode)
+
+Windows 11 avec **Smart App Control** actif bloque silencieusement les
+exécutables non signés au lancement de session : l'icône du tray n'apparaît
+plus, sans aucun message (événements Code Integrity 3033/3077). SAC n'offre
+aucune exclusion par application — la seule vraie réponse est de signer le
+binaire Windows.
+
+La voie retenue : **SignPath Foundation** (signature Authenticode gratuite pour
+les projets open source). Leur exigence centrale : ne signer que des artefacts
+construits de façon traçable par une CI publique — c'est le rôle du workflow
+`.github/workflows/uploader-build.yml`, qui reconstruit l'exe Windows avec
+exactement les flags de `scripts/release.sh`.
+
+Mise en route (une fois la candidature acceptée sur signpath.org) :
+
+1. Installer la GitHub App SignPath sur le dépôt (demandé pendant la
+   candidature).
+2. Créer côté SignPath un projet `auberdine-uploader` avec une signing policy
+   `release-signing` (slugs attendus par le workflow).
+3. Dans le dépôt GitHub : variable `SIGNPATH_ORGANIZATION_ID` (Settings →
+   Secrets and variables → Actions → Variables) + secret `SIGNPATH_API_TOKEN`.
+4. Le job `sign-windows` s'activera alors de lui-même sur chaque tag `vX.Y.Z`
+   et produira l'artefact `auberdine-uploader-windows-amd64-signed`.
+
+**Articulation avec `release.sh`** : l'Authenticode modifie le PE, donc
+l'empreinte SHA256 et la signature ed25519 doivent être refaites sur l'exe
+*signé*. Séquence de release une fois SignPath actif : tagger/pousser d'abord,
+attendre le job `sign-windows`, télécharger l'exe signé dans `dist/` à la place
+du build local, puis laisser `release.sh` produire SHA256SUMS + `.sig` et
+publier. (À automatiser dans `release.sh` quand la chaîne sera acceptée.)
+
 ## Commandes
 
 ```bash
