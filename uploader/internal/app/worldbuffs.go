@@ -65,6 +65,81 @@ func (a *App) syncWorldbuffs(ctx context.Context) {
 	}
 }
 
+// sightingsBatchMax borne un envoi (le journal addon est lui-même plafonné à
+// 100 entrées par personnage ; la borne protège juste le POST).
+const sightingsBatchMax = 200
+
+// syncWorldbuffSightings relaie la voie montante : les poses de world buffs
+// observées en jeu (AuberdineExporterDB.wbSightings, cf. WorldbuffLogger.lua)
+// sont transmises à /ingest/worldbuffs/sightings. Dédup locale par clé stable
+// dans le state (comme SentRuns) : l'addon garde son journal, l'uploader ne
+// le renvoie jamais deux fois.
+func (a *App) syncWorldbuffSightings(ctx context.Context) {
+	if a.APIKey() == "" {
+		return
+	}
+
+	var batch []upload.WorldbuffSighting
+	var keys []string
+	for _, p := range a.paths.SavedVars {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		parsed, err := luasv.Parse(string(raw))
+		if err != nil {
+			continue
+		}
+		db, _ := parsed["AuberdineExporterDB"].(map[string]any)
+		list, _ := db["wbSightings"].([]any)
+		for _, it := range list {
+			s, ok := it.(map[string]any)
+			if !ok {
+				continue
+			}
+			spellID, _ := s["spellId"].(float64)
+			at, _ := s["at"].(float64)
+			character, _ := s["character"].(string)
+			realm, _ := s["realm"].(string)
+			if spellID == 0 || at == 0 || character == "" || realm == "" {
+				continue
+			}
+			name, _ := s["name"].(string)
+			guild, _ := s["guild"].(string)
+			faction, _ := s["faction"].(string)
+			zone, _ := s["zone"].(string)
+			key := fmt.Sprintf("%s|%s|%d|%d", realm, character, int64(spellID), int64(at))
+			if a.state.sightingSent(key) {
+				continue
+			}
+			batch = append(batch, upload.WorldbuffSighting{
+				SpellID: int64(spellID), Name: name, At: int64(at),
+				Character: character, Realm: realm,
+				Guild: guild, Faction: faction, Zone: zone,
+			})
+			keys = append(keys, key)
+			if len(batch) >= sightingsBatchMax {
+				break
+			}
+		}
+	}
+	if len(batch) == 0 {
+		return
+	}
+	stored, err := a.uploader.SendWorldbuffSightings(ctx, batch)
+	if err != nil {
+		if upload.IsDefinitive(err) {
+			// Contenu refusé : marquer transmis pour ne pas boucler dessus.
+			_ = a.state.markSightingsSent(keys)
+		}
+		return // transitoire / endpoint absent : on retentera
+	}
+	if err := a.state.markSightingsSent(keys); err != nil {
+		a.logger.Printf("sightings state : %v", err)
+	}
+	a.logger.Printf("worldbuffs : %d pose(s) observée(s) transmise(s) (%d retenue(s) serveur)", len(batch), stored)
+}
+
 // worldbuffsKeySet projette les entrées du flux en ensemble de clés stables
 // (comparaison de contenu entre le serveur et le fichier déjà écrit).
 func worldbuffsKeySet(entries []upload.WorldbuffEntry) map[string]bool {

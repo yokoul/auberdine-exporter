@@ -89,3 +89,52 @@ func TestSyncWorldbuffs_WritesThenSkipsWhenFresh(t *testing.T) {
 		t.Fatalf("attendu 1 entrée après mise à jour, obtenu %d", len(entries))
 	}
 }
+
+func TestSyncWorldbuffSightings_SendsOnceThenDedups(t *testing.T) {
+	sv := `AuberdineExporterDB = {
+	["version"] = "1.7.6",
+	["wbSightings"] = {
+		{ -- [1]
+			["spellId"] = 22888,
+			["name"] = "Cri de ralliement du tueur de dragons",
+			["at"] = 1752860000,
+			["character"] = "Carna",
+			["realm"] = "Auberdine",
+			["guild"] = "Constellation",
+			["faction"] = "ALLIANCE",
+			["zone"] = "Orgrimmar",
+		}, -- [1]
+		{ -- [2]
+			["spellId"] = 16609,
+			["at"] = 1752861800,
+			["character"] = "Carna",
+			["realm"] = "Auberdine",
+		}, -- [2]
+		{ -- [3] entrée invalide (pas de personnage) : ignorée
+			["spellId"] = 24425,
+			["at"] = 1752861900,
+			["realm"] = "Auberdine",
+		}, -- [3]
+	},
+}
+`
+	root := setupWoW(t, sv)
+	up := &fakeUploader{}
+	a := newTestApp(t, root, up)
+	ctx := context.Background()
+
+	a.syncWorldbuffSightings(ctx)
+	if len(up.sightings) != 2 {
+		t.Fatalf("attendu 2 poses transmises, obtenu %d", len(up.sightings))
+	}
+	s0 := up.sightings[0]
+	if s0.SpellID != 22888 || s0.Character != "Carna" || s0.Guild != "Constellation" || s0.At != 1752860000 {
+		t.Fatalf("pose inattendue: %+v", s0)
+	}
+
+	// Second cycle : tout est déjà marqué transmis, aucun renvoi.
+	a.syncWorldbuffSightings(ctx)
+	if len(up.sightings) != 2 {
+		t.Fatalf("renvoi indu : %d poses transmises au total", len(up.sightings))
+	}
+}

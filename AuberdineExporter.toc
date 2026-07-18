@@ -35,3 +35,6 @@ Inbox.lua
 
 # Agenda des world buffs planifiés (flux descendant AWB → tooltip minimap)
 Worldbuffs.lua
+
+# Journal des poses de world buffs observées (voie montante → Hall of Fame)
+WorldbuffLogger.lua

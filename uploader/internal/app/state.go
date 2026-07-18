@@ -20,6 +20,8 @@ type State struct {
 	ExportHashes map[string]string `json:"exportHashes"`
 	// SentRuns : identifiants de runs de donjon déjà transmis (dédup).
 	SentRuns map[string]bool `json:"sentRuns"`
+	// SentSightings : clés de poses de world buffs déjà transmises (dédup).
+	SentSightings map[string]bool `json:"sentSightings"`
 
 	path string
 }
@@ -48,9 +50,10 @@ func LoadState() (*State, error) {
 		return nil, err
 	}
 	s := &State{
-		ExportHashes: map[string]string{},
-		SentRuns:     map[string]bool{},
-		path:         p,
+		ExportHashes:  map[string]string{},
+		SentRuns:      map[string]bool{},
+		SentSightings: map[string]bool{},
+		path:          p,
 	}
 	data, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
@@ -68,9 +71,10 @@ func LoadState() (*State, error) {
 		// renvoyer quelques données déjà transmises, sans dommage.
 		_ = os.Rename(p, p+".corrupt")
 		return &State{
-			ExportHashes: map[string]string{},
-			SentRuns:     map[string]bool{},
-			path:         p,
+			ExportHashes:  map[string]string{},
+			SentRuns:      map[string]bool{},
+			SentSightings: map[string]bool{},
+			path:          p,
 		}, nil
 	}
 	if s.ExportHashes == nil {
@@ -78,6 +82,9 @@ func LoadState() (*State, error) {
 	}
 	if s.SentRuns == nil {
 		s.SentRuns = map[string]bool{}
+	}
+	if s.SentSightings == nil {
+		s.SentSightings = map[string]bool{}
 	}
 	s.path = p
 	return s, nil
@@ -117,5 +124,21 @@ func (s *State) markRunSent(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.SentRuns[id] = true
+	return s.save()
+}
+
+func (s *State) sightingSent(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.SentSightings[key]
+}
+
+// markSightingsSent marque un lot de poses transmises (une seule sauvegarde).
+func (s *State) markSightingsSent(keys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range keys {
+		s.SentSightings[k] = true
+	}
 	return s.save()
 }

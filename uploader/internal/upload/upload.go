@@ -57,6 +57,10 @@ type Uploader interface {
 	// Worldbuffs récupère l'agenda des world buffs planifiés (flux descendant
 	// de données : site → uploader → SavedVariable → tooltip in-game).
 	Worldbuffs(ctx context.Context) (WorldbuffsFeed, error)
+	// SendWorldbuffSightings transmet les poses de world buffs observées en
+	// jeu (voie montante : addon → uploader → site). Renvoie le nombre de
+	// poses retenues côté serveur (hors doublons).
+	SendWorldbuffSightings(ctx context.Context, sightings []WorldbuffSighting) (int, error)
 }
 
 // StatusResponse est la réponse de GET /ingest/status.
@@ -152,6 +156,25 @@ type worldbuffsResponse struct {
 	Success     bool             `json:"success"`
 	GeneratedAt int64            `json:"generatedAt"`
 	Worldbuffs  []WorldbuffEntry `json:"worldbuffs"`
+}
+
+// WorldbuffSighting est une pose de world buff observée en jeu, telle
+// qu'enregistrée par l'addon dans AuberdineExporterDB.wbSightings
+// (WorldbuffLogger.lua).
+type WorldbuffSighting struct {
+	SpellID   int64  `json:"spellId"`
+	Name      string `json:"name"`
+	At        int64  `json:"at"` // epoch s (GetServerTime côté addon)
+	Character string `json:"character"`
+	Realm     string `json:"realm"`
+	Guild     string `json:"guild"`
+	Faction   string `json:"faction"` // "HORDE" | "ALLIANCE" | ""
+	Zone      string `json:"zone"`
+}
+
+type sightingsResponse struct {
+	Success bool `json:"success"`
+	Stored  int  `json:"stored"`
 }
 
 // HTTPError porte le code HTTP et l'enveloppe d'erreur serveur. Les 4xx de
@@ -260,6 +283,27 @@ func (c *HTTPClient) Worldbuffs(ctx context.Context) (WorldbuffsFeed, error) {
 		return WorldbuffsFeed{}, fmt.Errorf("upload: réponse worldbuffs illisible: %w", err)
 	}
 	return WorldbuffsFeed{GeneratedAt: out.GeneratedAt, Entries: out.Worldbuffs}, nil
+}
+
+// SendWorldbuffSightings poste les poses observées (POST
+// /ingest/worldbuffs/sightings). No-op si la liste est vide.
+func (c *HTTPClient) SendWorldbuffSightings(ctx context.Context, sightings []WorldbuffSighting) (int, error) {
+	if len(sightings) == 0 {
+		return 0, nil
+	}
+	payload, err := json.Marshal(map[string][]WorldbuffSighting{"sightings": sightings})
+	if err != nil {
+		return 0, err
+	}
+	body, err := c.do(ctx, http.MethodPost, "/ingest/worldbuffs/sightings", payload)
+	if err != nil {
+		return 0, err
+	}
+	var out sightingsResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return 0, fmt.Errorf("upload: réponse sightings illisible: %w", err)
+	}
+	return out.Stored, nil
 }
 
 // SendExport poste l'export signé vers /ingest/export.
