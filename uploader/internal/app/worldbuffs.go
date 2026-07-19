@@ -66,7 +66,8 @@ func (a *App) syncWorldbuffs(ctx context.Context) {
 }
 
 // sightingsBatchMax borne un envoi (le journal addon est lui-même plafonné à
-// 100 entrées par personnage ; la borne protège juste le POST).
+// 400 entrées par personnage, relais des pairs compris ; le reliquat d'un
+// gros journal part au cycle suivant).
 const sightingsBatchMax = 200
 
 // syncWorldbuffSightings relaie la voie montante : les poses de world buffs
@@ -108,6 +109,7 @@ func (a *App) syncWorldbuffSightings(ctx context.Context) {
 			guild, _ := s["guild"].(string)
 			faction, _ := s["faction"].(string)
 			zone, _ := s["zone"].(string)
+			relayed, _ := s["relayed"].(bool)
 			key := fmt.Sprintf("%s|%s|%d|%d", realm, character, int64(spellID), int64(at))
 			if a.state.sightingSent(key) {
 				continue
@@ -116,6 +118,7 @@ func (a *App) syncWorldbuffSightings(ctx context.Context) {
 				SpellID: int64(spellID), Name: name, At: int64(at),
 				Character: character, Realm: realm,
 				Guild: guild, Faction: faction, Zone: zone,
+				Relayed: relayed,
 			})
 			keys = append(keys, key)
 			if len(batch) >= sightingsBatchMax {

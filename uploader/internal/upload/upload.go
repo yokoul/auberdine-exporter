@@ -160,7 +160,9 @@ type worldbuffsResponse struct {
 
 // WorldbuffSighting est une pose de world buff observée en jeu, telle
 // qu'enregistrée par l'addon dans AuberdineExporterDB.wbSightings
-// (WorldbuffLogger.lua).
+// (WorldbuffLogger.lua). Relayed marque une observation reçue d'un pair via
+// le mesh addon (Comms.lua) plutôt qu'observée par ce personnage : le
+// serveur la trace pour pondérer les agrégats.
 type WorldbuffSighting struct {
 	SpellID   int64  `json:"spellId"`
 	Name      string `json:"name"`
@@ -170,6 +172,7 @@ type WorldbuffSighting struct {
 	Guild     string `json:"guild"`
 	Faction   string `json:"faction"` // "HORDE" | "ALLIANCE" | ""
 	Zone      string `json:"zone"`
+	Relayed   bool   `json:"relayed,omitempty"`
 }
 
 type sightingsResponse struct {

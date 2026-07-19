@@ -18,7 +18,7 @@
 
 local FRESH_MARGIN = 300     -- s manquantes tolérées pour une pose « fraîche »
 local DEDUP_WINDOW = 1800    -- s : même buff revu dans la fenêtre = même pose
-local MAX_ENTRIES = 100      -- plafond dur du journal local
+local MAX_ENTRIES = 400      -- plafond dur du journal (poses propres + relais)
 local MAX_AGE = 30 * 24 * 3600 -- purge des observations de plus de 30 jours
 
 -- spellId → durée pleine du buff (s). Étendre ici pour suivre d'autres poses.
@@ -72,7 +72,7 @@ local function record(spellId, name)
   if alreadyLogged(list, spellId, at) then return end
   local guild = GetGuildInfo("player")
   local faction = UnitFactionGroup("player") -- token non localisé "Horde"/"Alliance"
-  list[#list + 1] = {
+  local entry = {
     spellId = spellId,
     name = name,
     at = at,
@@ -82,10 +82,53 @@ local function record(spellId, name)
     faction = faction and faction:upper() or "",
     zone = GetRealZoneText() or "",
   }
+  list[#list + 1] = entry
   prune(list)
   if AuberdineExporterDB.settings and AuberdineExporterDB.settings.verboseDebug then
     print("|cff00ff00Auberdine:|r pose observée : " .. tostring(name) .. " (" .. spellId .. ")")
   end
+  -- Observation DIRECTE uniquement : broadcast aux pairs (Comms.lua, hop 1).
+  if AuberdineComms and AuberdineComms.BroadcastSighting then
+    AuberdineComms:BroadcastSighting(entry)
+  end
+end
+
+-- Observation reçue d'un pair via le mesh addon (Comms.lua). Stockée
+-- relayed = true : l'uploader la pousse telle quelle, le serveur la trace —
+-- et un pair sans uploader garde la sienne en direct (non relayed) s'il
+-- l'observe aussi. Dédup par PERSONNAGE : la même pose vue par 30 joueurs
+-- fait 30 observations légitimes (grain individuel voulu côté serveur).
+function AuberdineWorldbuffLogger.AddRelayed(s)
+  if type(s) ~= "table" then return false end
+  local spellId = tonumber(s.spellId)
+  local at = tonumber(s.at)
+  local character = type(s.character) == "string" and s.character or ""
+  local realm = type(s.realm) == "string" and s.realm or ""
+  if not spellId or spellId <= 0 or not at or character == "" or realm == "" then
+    return false
+  end
+  -- Jamais soi-même en relais (sa propre observation directe fait foi).
+  if character == UnitName("player") and realm == GetRealmName() then return false end
+  local list = sightings()
+  for _, e in ipairs(list) do
+    if e.spellId == spellId and e.character == character and (e.realm or "") == realm
+        and math.abs((tonumber(e.at) or 0) - at) < DEDUP_WINDOW then
+      return false
+    end
+  end
+  list[#list + 1] = {
+    spellId = spellId,
+    name = tostring(s.name or ""),
+    at = at,
+    character = character,
+    realm = realm,
+    guild = tostring(s.guild or ""),
+    faction = tostring(s.faction or ""),
+    zone = tostring(s.zone or ""),
+    relayed = true,
+  }
+  prune(list)
+  return true
 end
 
 -- Scanne les buffs du joueur et enregistre les apparitions fraîches.

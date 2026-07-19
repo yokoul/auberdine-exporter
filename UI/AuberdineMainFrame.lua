@@ -891,6 +891,33 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     end)
     yOffset = yOffset - 40
 
+    -- ===== Section World buffs — partage entre joueurs (actif par défaut) =====
+    local Comms = AuberdineComms
+    local commsSettings = Comms and Comms:GetSettings() or { enabled = true }
+
+    local commsTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    commsTitle:SetPoint("TOPLEFT", 10, yOffset)
+    commsTitle:SetText("World buffs — partage entre joueurs")
+    commsTitle:SetTextColor(1, 0.82, 0)
+    yOffset = yOffset - 26
+
+    local commsHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    commsHint:SetPoint("TOPLEFT", 12, yOffset)
+    commsHint:SetWidth(440)
+    commsHint:SetJustifyH("LEFT")
+    commsHint:SetText("Relaie l'agenda des poses et les poses observées entre utilisateurs de l'addon (guilde + canal « auberdine », masqué du chat). Sans client AuberdineUploader, vous recevez quand même l'agenda ; vos observations remontent à Auberdine via les autres joueurs.")
+    yOffset = yOffset - 56
+
+    local commsEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    commsEnableCheck:SetPoint("TOPLEFT", 10, yOffset)
+    commsEnableCheck:SetChecked(commsSettings.enabled)
+    commsEnableCheck.text:SetText("Partager les world buffs avec les autres joueurs")
+    commsEnableCheck:SetScript("OnClick", function(self)
+        if not Comms then return end
+        if self:GetChecked() then Comms:Enable() else Comms:Disable() end
+    end)
+    yOffset = yOffset - 40
+
     -- Reset button
     local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     resetBtn:SetPoint("TOPLEFT", 10, yOffset)
