@@ -217,6 +217,16 @@ end
 
 -- ===================== Réception =====================
 
+-- Seuls les clients avec un uploader ACTIF stockent les observations des
+-- pairs : sans lui, le journal relayé ne serait jamais poussé (poids mort).
+-- Preuve d'uploader = agenda écrit récemment dans AuberdineWorldbuffsFeed
+-- (fichier posé hors-jeu par le client local, jamais par le relais).
+local function hasLocalUploader()
+    local feed = AuberdineWorldbuffsFeed
+    local fetchedAt = type(feed) == "table" and tonumber(feed.fetchedAt) or nil
+    return fetchedAt ~= nil and (time() - fetchedAt) < 7 * 24 * 3600
+end
+
 -- Anti-flood : fenêtre glissante d'acceptation des observations relayées.
 local relayTimes = {}
 
@@ -235,6 +245,7 @@ end
 local replyTimer = nil
 
 local function onSighting(fields)
+    if not hasLocalUploader() then return end
     if not relayBudgetOk() then return end
     local now = (GetServerTime and GetServerTime() or time())
     local at = tonumber(fields[4])
