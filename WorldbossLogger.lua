@@ -1,23 +1,29 @@
--- WorldbossLogger.lua — morts de world bosses OBSERVÉES en jeu
+-- WorldbossLogger.lua — world bosses OBSERVÉS en jeu (mort ET présence)
 --
 -- Les world bosses ERA (Azuregos, Kazzak, dragons du Cauchemar) sont loggés
 -- en trash par WarcraftLogs : aucun ID d'encounter exploitable côté site.
--- Ce module comble le trou : quand la mort d'un de ces PNJ passe dans le
--- combat log (UNIT_DIED, portée ~50 m — être sur place suffit), on
--- l'enregistre dans AuberdineExporterDB.worldbossSightings, l'uploader la
--- pousse vers /ingest/worldbosses/sightings, et le site en tire des timers
--- de spawn communautaires.
+-- Ce module comble le trou par DEUX signaux, chacun horodaté et zoné :
+--   * MORT (kind='death')  : UNIT_DIED du PNJ dans le combat log.
+--   * PRÉSENCE (kind='alive'): le PNJ est vu VIVANT — ciblé, survolé, ou sa
+--     plaque de nom apparaît (passer à côté suffit si les plaques ennemies
+--     sont actives). Une présence dit « il est debout, là ».
 --
--- Même modèle que WorldbuffLogger : observation DIRECTE broadcastée sur le
--- mesh (Comms.lua, kind W, hop 1), les pairs porteurs d'uploader stockent
--- les relais (relayed = true), et tout le monde voit l'annonce en jeu.
+-- Le serveur confronte les deux : une présence postérieure à la fenêtre de
+-- respawn écrase toute spéculation de retour (un raid sans addon a pu re-tuer
+-- et laisser respawn hors de notre vue). Une présence ne se périme jamais
+-- d'elle-même côté serveur — on remonte juste QUAND elle a été vue.
+--
+-- Diffusion : mesh addon-à-addon (Comms.lua, kind W, hop 1) + uploader →
+-- /ingest/worldbosses/sightings. Aucun cri sur un canal : seul un print LOCAL
+-- (visible du seul joueur) signale la détection.
 
-local DEDUP_WINDOW = 3600          -- s : un même boss ne meurt qu'une fois par spawn
-local MAX_ENTRIES = 60             -- plafond dur (événements rares)
-local MAX_AGE = 30 * 24 * 3600     -- purge des observations de plus de 30 jours
+local DEATH_DEDUP = 3600       -- s : même mort revue dans la fenêtre = même pose
+local ALIVE_DEDUP = 600        -- s : même boss revu vivant = même observation
+local MAX_ENTRIES = 80         -- plafond dur (morts + présences + relais)
+local MAX_AGE = 30 * 24 * 3600 -- purge des observations de plus de 30 jours
 
--- npc_id (cmangos) → nom canonique. Le CLEU donne destName localisé, on
--- l'envoie tel quel en `name` ; le serveur mappe par npc_id, pas par libellé.
+-- npc_id (cmangos) → nom canonique. destName du CLEU est localisé — on l'envoie
+-- tel quel en `name` ; le serveur mappe par npc_id, jamais par libellé.
 local WORLD_BOSSES = {
   [6109]  = "Azuregos",
   [12397] = "Seigneur Kazzak",
@@ -52,9 +58,13 @@ local function prune(list)
   end
 end
 
-local function alreadyLogged(list, npcId, at, character)
+-- Dédup par (npcId, kind, personnage) dans la fenêtre propre au kind : une
+-- présence et une mort ne se dédupliquent JAMAIS entre elles.
+local function alreadyLogged(list, npcId, at, character, kind)
+  local window = (kind == "alive") and ALIVE_DEDUP or DEATH_DEDUP
   for _, s in ipairs(list) do
-    if s.npcId == npcId and math.abs((tonumber(s.at) or 0) - at) < DEDUP_WINDOW
+    if s.npcId == npcId and (s.kind or "death") == kind
+        and math.abs((tonumber(s.at) or 0) - at) < window
         and (character == nil or s.character == character) then
       return true
     end
@@ -62,61 +72,88 @@ local function alreadyLogged(list, npcId, at, character)
   return false
 end
 
--- Annonce en jeu (observation directe comme relais reçu) : c'est la valeur
--- communautaire immédiate — savoir que le boss vient de tomber. Dédupée par
--- le même DEDUP_WINDOW que le stockage.
-local announced = {}  -- npcId → dernier at annoncé
-
-local function announce(npcId, at)
-  if announced[npcId] and math.abs(announced[npcId] - at) < DEDUP_WINDOW then return end
-  announced[npcId] = at
-  local name = WORLD_BOSSES[npcId] or ("PNJ " .. npcId)
-  print("|cff00ff00Auberdine:|r |cffff8000" .. name .. "|r vient d'être vaincu !")
+local function debugOn()
+  return AuberdineExporterDB and AuberdineExporterDB.settings
+    and AuberdineExporterDB.settings.verboseDebug
 end
 
-local function record(npcId, destName)
-  local list = sightings()
-  local at = GetServerTime and GetServerTime() or time()
-  if alreadyLogged(list, npcId, at, UnitName("player")) then return end
+-- Fabrique une entrée d'observation directe (mort ou présence).
+local function makeEntry(npcId, name, kind)
   local guild = GetGuildInfo("player")
   local faction = UnitFactionGroup("player")
-  local entry = {
+  return {
     npcId = npcId,
-    name = destName or WORLD_BOSSES[npcId],
-    at = at,
+    name = name or WORLD_BOSSES[npcId],
+    at = GetServerTime and GetServerTime() or time(),
     character = UnitName("player"),
     realm = GetRealmName(),
     guild = guild or "",
     faction = faction and faction:upper() or "",
     zone = GetRealZoneText() or "",
+    subzone = (GetSubZoneText and GetSubZoneText()) or "",
+    kind = kind,
   }
+end
+
+-- Annonce de mort (print LOCAL, self-only), dédupée par boss : 40 raideurs qui
+-- relaient le même kill ne produisent qu'un seul « vaincu ! ». Vaut pour la
+-- mort DIRECTE comme pour un relais reçu (parité avec la 1.7.8).
+local killAnnounced = {}  -- npcId → dernier `at` annoncé
+local function announceKill(npcId, name, at)
+  if killAnnounced[npcId] and math.abs(killAnnounced[npcId] - at) < DEATH_DEDUP then return end
+  killAnnounced[npcId] = at
+  print("|cff00ff00Auberdine:|r |cffff8000" .. (name or WORLD_BOSSES[npcId] or "?") .. "|r vient d'être vaincu !")
+end
+
+-- MORT observée (combat log).
+local function recordDeath(npcId, destName)
+  local list = sightings()
+  local entry = makeEntry(npcId, destName, "death")
+  if alreadyLogged(list, npcId, entry.at, entry.character, "death") then return end
   list[#list + 1] = entry
   prune(list)
-  announce(npcId, at)
-  -- Observation DIRECTE uniquement : broadcast aux pairs (Comms.lua, hop 1).
+  announceKill(npcId, entry.name, entry.at)
   if AuberdineComms and AuberdineComms.BroadcastWorldboss then
     AuberdineComms:BroadcastWorldboss(entry)
   end
 end
 
--- Observation reçue d'un pair via le mesh (Comms.lua). L'annonce est pour
--- tout le monde ; le STOCKAGE est réservé aux porteurs d'uploader (décidé
--- par l'appelant, comme pour les poses de world buffs).
+-- PRÉSENCE observée (cible / survol / plaque de nom).
+local function recordAlive(npcId, unitName)
+  local list = sightings()
+  local entry = makeEntry(npcId, unitName, "alive")
+  if alreadyLogged(list, npcId, entry.at, entry.character, "alive") then return end
+  list[#list + 1] = entry
+  prune(list)
+  local where = entry.subzone ~= "" and (entry.zone .. ", " .. entry.subzone) or entry.zone
+  print("|cff00ff00Auberdine:|r |cffff8000" .. entry.name .. "|r aperçu vivant — " .. where .. " (signalé)")
+  if AuberdineComms and AuberdineComms.BroadcastWorldboss then
+    AuberdineComms:BroadcastWorldboss(entry)
+  end
+end
+
+-- Observation reçue d'un pair via le mesh (Comms.lua). L'annonce est un print
+-- local pour tous ; le STOCKAGE (voie montante) est réservé aux porteurs
+-- d'uploader (décidé par l'appelant, comme les poses de world buffs).
 function AuberdineWorldbossLogger.AddRelayed(s, storeIt)
   if type(s) ~= "table" then return false end
   local npcId = tonumber(s.npcId)
   local at = tonumber(s.at)
   local character = type(s.character) == "string" and s.character or ""
   local realm = type(s.realm) == "string" and s.realm or ""
+  local kind = (s.kind == "alive") and "alive" or "death"
   if not npcId or not WORLD_BOSSES[npcId] or not at or character == "" or realm == "" then
     return false
   end
-  announce(npcId, at)
+  -- Un kill relayé s'annonce (print local dédupé) chez tous les receveurs,
+  -- comme en 1.7.8. Une PRÉSENCE relayée reste SILENCIEUSE (pas de spam, pas
+  -- de fuite de découverte hors du site).
+  if kind == "death" then announceKill(npcId, s.name, at) end
   if not storeIt then return false end
   -- Jamais soi-même en relais (sa propre observation directe fait foi).
   if character == UnitName("player") and realm == GetRealmName() then return false end
   local list = sightings()
-  if alreadyLogged(list, npcId, at, character) then return false end
+  if alreadyLogged(list, npcId, at, character, kind) then return false end
   list[#list + 1] = {
     npcId = npcId,
     name = tostring(s.name or ""),
@@ -126,6 +163,8 @@ function AuberdineWorldbossLogger.AddRelayed(s, storeIt)
     guild = tostring(s.guild or ""),
     faction = tostring(s.faction or ""),
     zone = tostring(s.zone or ""),
+    subzone = tostring(s.subzone or ""),
+    kind = kind,
     relayed = true,
   }
   prune(list)
@@ -140,22 +179,42 @@ local function npcIdFromGuid(guid)
   return tonumber(npcId)
 end
 
+-- Une unité EST-elle un world boss VIVANT ? (un cadavre ciblable ne compte pas
+-- comme présence — ceinture et bretelles avec le plancher de respawn serveur.)
+local function checkUnitAlive(unit)
+  if not unit or not UnitExists(unit) then return end
+  if UnitIsDead(unit) then return end
+  local npcId = npcIdFromGuid(UnitGUID(unit))
+  if npcId and WORLD_BOSSES[npcId] then
+    recordAlive(npcId, UnitName(unit))
+  end
+end
+
 local f = CreateFrame("Frame")
-f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
-f:SetScript("OnEvent", function(_, event)
+f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+f:RegisterEvent("PLAYER_TARGET_CHANGED")
+f:RegisterEvent("UPDATE_MOUSEOVER")
+f:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+f:SetScript("OnEvent", function(_, event, arg1)
   if AuberdineExporter and AuberdineExporter.IsOnAuberdine
       and not AuberdineExporter:IsOnAuberdine() then
     return
   end
   if event == "PLAYER_ENTERING_WORLD" then
     prune(sightings())
-    return
-  end
-  local _, subevent, _, _, _, _, _, destGUID, destName = CombatLogGetCurrentEventInfo()
-  if subevent ~= "UNIT_DIED" then return end
-  local npcId = npcIdFromGuid(destGUID)
-  if npcId and WORLD_BOSSES[npcId] then
-    record(npcId, destName)
+  elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+    local _, subevent, _, _, _, _, _, destGUID, destName = CombatLogGetCurrentEventInfo()
+    if subevent ~= "UNIT_DIED" then return end
+    local npcId = npcIdFromGuid(destGUID)
+    if npcId and WORLD_BOSSES[npcId] then
+      recordDeath(npcId, destName)
+    end
+  elseif event == "PLAYER_TARGET_CHANGED" then
+    checkUnitAlive("target")
+  elseif event == "UPDATE_MOUSEOVER" then
+    checkUnitAlive("mouseover")
+  elseif event == "NAME_PLATE_UNIT_ADDED" then
+    checkUnitAlive(arg1)  -- arg1 = jeton d'unité de la plaque
   end
 end)

@@ -225,7 +225,9 @@ function Comms:BroadcastSighting(s)
     }, FS))
 end
 
--- Mort de world boss observée (WorldbossLogger.record, directe uniquement).
+-- World boss observé — MORT ou PRÉSENCE (WorldbossLogger, directe uniquement).
+-- kind (fields[11]) et subzone (fields[12]) sont AJOUTÉS EN FIN : les clients
+-- d'avant la présence lisent fields[3..10] et ignorent la queue → compatible.
 function Comms:BroadcastWorldboss(s)
     if not self:IsEnabled() or not onSupportedRealm() then return end
     broadcastJittered(table.concat({
@@ -237,6 +239,8 @@ function Comms:BroadcastWorldboss(s)
         tostring(s.guild or ""):sub(1, 48),
         tostring(s.faction or ""),
         tostring(s.zone or ""):sub(1, 48),
+        (s.kind == "alive") and "alive" or "death",
+        tostring(s.subzone or ""):sub(1, 48),
     }, FS))
 end
 
@@ -347,6 +351,8 @@ local function onWorldboss(fields)
     if not relayBudgetOk() then return end
     local at = plausibleAt(fields[4])
     if not at then return end
+    -- kind/subzone absents = message d'un client d'avant la présence → 'death'.
+    local kind = (fields[11] == "alive") and "alive" or "death"
     local added = AuberdineWorldbossLogger and AuberdineWorldbossLogger.AddRelayed
         and AuberdineWorldbossLogger.AddRelayed({
             npcId = tonumber(fields[3]),
@@ -357,9 +363,11 @@ local function onWorldboss(fields)
             guild = fields[8],
             faction = cleanFaction(fields[9]),
             zone = fields[10],
+            kind = kind,
+            subzone = fields[12],
         }, hasLocalUploader())
     if added then
-        debugPrint("world boss relayé : " .. tostring(fields[5]) .. " par " .. tostring(fields[6]))
+        debugPrint("world boss relayé (" .. kind .. ") : " .. tostring(fields[5]) .. " par " .. tostring(fields[6]))
     end
 end
 

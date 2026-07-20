@@ -25,12 +25,14 @@ type meshSightingSpec struct {
 
 var meshSightingSpecs = []meshSightingSpec{
 	{
-		// Morts de world bosses (WorldbossLogger.lua, mesh kind W).
+		// Morts ET présences de world bosses (WorldbossLogger.lua, mesh kind W).
+		// `kind` distingue death/alive ; `subzone` précise le portail (drakes
+		// errants). Le serveur confronte présence vs mort.
 		savedVar:  "worldbossSightings",
 		path:      "worldbosses",
 		statePfx:  "wboss",
 		idField:   "npcId",
-		strFields: []string{"name", "guild", "faction", "zone"},
+		strFields: []string{"name", "guild", "faction", "zone", "subzone", "kind"},
 	},
 	{
 		// Boss de raid vaincus (KillLogger.lua, mesh kind K).
@@ -82,7 +84,11 @@ func (a *App) syncOneMeshList(ctx context.Context, spec meshSightingSpec) {
 			if id == 0 || at == 0 || character == "" || realm == "" {
 				continue
 			}
-			key := fmt.Sprintf("%s|%s|%s|%d|%d", spec.statePfx, realm, character, int64(id), int64(at))
+			// `kind` dans la clé : une mort et une présence au même horodatage
+			// (collision improbable) restent deux envois distincts. Vide pour
+			// les specs sans kind (raidkills) — clé stable.
+			kind, _ := s["kind"].(string)
+			key := fmt.Sprintf("%s|%s|%s|%d|%d|%s", spec.statePfx, realm, character, int64(id), int64(at), kind)
 			if a.state.sightingSent(key) {
 				continue
 			}
