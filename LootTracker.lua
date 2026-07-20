@@ -230,7 +230,7 @@ local function HandleLootMessage(msg)
 
     local name, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
     local uid = LootUid(recipient, item.itemId, bossId, ts)
-    RecordLoot({
+    local entry = {
         lootUid      = uid,
         recipient    = StripRealm(recipient),
         itemId       = item.itemId,
@@ -243,6 +243,55 @@ local function HandleLootMessage(msg)
         instanceId   = instanceID or 0,
         lootedAt     = ts,
         source       = "chat",
+    }
+    local isNew = RecordLoot(entry)
+    -- Capture DIRECTE et nouvelle : broadcast aux pairs (Comms.lua, kind L,
+    -- hop 1). Un pair porteur d'uploader hors du raid pourra porter ce loot
+    -- dans son export si aucun raideur n'exporte jamais le sien.
+    if isNew and AuberdineComms and AuberdineComms.BroadcastLoot then
+        AuberdineComms:BroadcastLoot(entry)
+    end
+end
+
+-- Butin reçu d'un pair via le mesh (Comms.lua). Le loot_uid est reconstruit
+-- avec les champs du BROADCASTEUR (mêmes recipient/bossId/itemId/at) : si
+-- l'observateur d'origine exporte un jour lui-même, le serveur fusionne les
+-- deux lignes sur cet uid et la version directe prime (relayed 1 → 0).
+-- Garde anti-doublon locale : un drop déjà capté en direct (uid décalé de
+-- quelques secondes entre observateurs) n'est pas re-stocké en relais.
+function LootTracker.AddRelayed(s)
+    if type(s) ~= "table" then return false end
+    if not LootSettings().enabled then return false end
+    if not IsValidRealm() then return false end
+    local itemId = tonumber(s.itemId)
+    local at = tonumber(s.lootedAt)
+    local recipient = type(s.recipient) == "string" and StripRealm(s.recipient) or ""
+    local quality = tonumber(s.itemQuality)
+    if not itemId or itemId <= 0 or not at or recipient == "" then return false end
+    if quality and quality < 4 then return false end  -- épiques seulement
+
+    local d = EnsureDB()
+    for _, v in pairs(d.items) do
+        if v.itemId == itemId and v.recipient == recipient
+            and math.abs((v.lootedAt or 0) - at) <= 10 then
+            return false  -- même drop déjà capté (direct ou relais antérieur)
+        end
+    end
+    local bossId = tonumber(s.bossId) or 0
+    return RecordLoot({
+        lootUid      = LootUid(recipient, itemId, bossId, at),
+        recipient    = recipient,
+        itemId       = itemId,
+        itemName     = type(s.itemName) == "string" and s.itemName or nil,
+        itemLink     = nil,  -- le lien complet ne voyage pas (trop long)
+        itemQuality  = quality,
+        bossName     = type(s.bossName) == "string" and s.bossName or nil,
+        bossKill     = s.bossKill,
+        instanceName = type(s.instanceName) == "string" and s.instanceName or nil,
+        instanceId   = tonumber(s.instanceId) or 0,
+        lootedAt     = at,
+        source       = "chat",
+        relayed      = true,
     })
 end
 
@@ -351,6 +400,7 @@ function LootTracker:GetExportData()
                 disposition = it.disposition,
                 reason      = it.reason,
                 awardedBy   = it.awardedBy,
+                relayed     = it.relayed or nil,  -- capté par un pair via le mesh
             }
         end
     end

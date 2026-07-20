@@ -1,4 +1,4 @@
--- Comms.lua — mesh addon-à-addon du canal worldbuffs (modèle Nova World Buffs)
+-- Comms.lua — mesh addon-à-addon d'Auberdine (modèle Nova World Buffs)
 --
 -- Relie les utilisateurs de l'addon entre eux via C_ChatInfo.SendAddonMessage
 -- (canal GUILD + canal custom "auberdine"), dans les DEUX sens :
@@ -7,16 +7,22 @@
 --     (Worldbuffs.lua, feed relayé). Bonus pour tous : les SavedVariables ne
 --     se relisant jamais en session, seul le relais d'un pair fraîchement
 --     loggué rafraîchit l'agenda EN COURS de session.
---   * MONTANT : chaque pose observée (WorldbuffLogger.lua) est broadcastée ;
---     les porteurs d'uploader stockent les observations des pairs sans
---     uploader (relayed = true) et leur uploader les pousse vers
---     /ingest/worldbuffs/sightings.
+--   * MONTANT : chaque observation directe est broadcastée ; les porteurs
+--     d'uploader stockent les observations des pairs sans uploader
+--     (relayed = true) et leur uploader les pousse vers /ingest.
+--
+-- Kinds du protocole (v1) :
+--   F/R  agenda worldbuffs planifié (descendant, requête/réponse)
+--   S    pose de world buff observée (WorldbuffLogger.lua)
+--   W    mort de world boss observée (WorldbossLogger.lua) + annonce en jeu
+--   K    boss de raid vaincu (KillLogger.lua) + annonce en jeu
+--   L    butin épique de raid capté (LootTracker.lua), pas d'annonce
 --
 -- CONFIANCE : un message addon est forgeable par n'importe quel joueur. Les
 -- observations relayées sont donc marquées relayed=true de bout en bout — le
--- serveur les trace et les agrégats sensibles (Hall of Fame) ne comptent que
--- les observations directes authentifiées. Anti-boucle : seules les
--- observations DIRECTES sont émises (hop max 1), jamais un relais.
+-- serveur les trace et les agrégats sensibles (Hall of Fame, `verified`) ne
+-- comptent que les observations directes authentifiées. Anti-boucle : seules
+-- les observations DIRECTES sont émises (hop max 1), jamais un relais.
 --
 -- Paramétrable dans les réglages, ACTIF par défaut (les données échangées
 -- sont celles d'utilisateurs de l'addon, déjà consentants par installation).
@@ -193,14 +199,21 @@ local function requestFeed()
     debugPrint("agenda demandé aux pairs (have=" .. have .. ")")
 end
 
--- ===================== Poses observées : émission =====================
+-- ===================== Observations : émission =====================
+
+-- Émission différée d'une observation directe : jitter 0-3 s pour étaler les
+-- 40 broadcasts simultanés d'un même événement de raid (pose, kill, loot).
+local function broadcastJittered(msg)
+    C_Timer.After(math.random() * 3, function()
+        if Comms:IsEnabled() then broadcast(msg) end
+    end)
+end
 
 -- Appelé par WorldbuffLogger.record() sur une observation DIRECTE uniquement
--- (jamais pour un relais reçu : hop max 1, pas de boucle). Jitter 0-3 s pour
--- étaler les 40 broadcasts simultanés d'une pose de raid.
+-- (jamais pour un relais reçu : hop max 1, pas de boucle).
 function Comms:BroadcastSighting(s)
     if not self:IsEnabled() or not onSupportedRealm() then return end
-    local msg = table.concat({
+    broadcastJittered(table.concat({
         SCHEMA, "S",
         tostring(s.spellId), tostring(s.at),
         tostring(s.name or ""):sub(1, 48),
@@ -209,10 +222,57 @@ function Comms:BroadcastSighting(s)
         tostring(s.guild or ""):sub(1, 48),
         tostring(s.faction or ""),
         tostring(s.zone or ""):sub(1, 48),
-    }, FS)
-    C_Timer.After(math.random() * 3, function()
-        if Comms:IsEnabled() then broadcast(msg) end
-    end)
+    }, FS))
+end
+
+-- Mort de world boss observée (WorldbossLogger.record, directe uniquement).
+function Comms:BroadcastWorldboss(s)
+    if not self:IsEnabled() or not onSupportedRealm() then return end
+    broadcastJittered(table.concat({
+        SCHEMA, "W",
+        tostring(s.npcId), tostring(s.at),
+        tostring(s.name or ""):sub(1, 48),
+        tostring(s.character or ""):sub(1, 48),
+        tostring(s.realm or ""):sub(1, 48),
+        tostring(s.guild or ""):sub(1, 48),
+        tostring(s.faction or ""),
+        tostring(s.zone or ""):sub(1, 48),
+    }, FS))
+end
+
+-- Boss de raid vaincu (KillLogger.record, directe uniquement).
+function Comms:BroadcastKill(s)
+    if not self:IsEnabled() or not onSupportedRealm() then return end
+    broadcastJittered(table.concat({
+        SCHEMA, "K",
+        tostring(s.encounterId), tostring(s.at),
+        tostring(s.name or ""):sub(1, 48),
+        tostring(s.character or ""):sub(1, 48),
+        tostring(s.realm or ""):sub(1, 48),
+        tostring(s.guild or ""):sub(1, 48),
+        tostring(s.faction or ""),
+        tostring(s.instanceId or 0),
+    }, FS))
+end
+
+-- Butin épique capté (LootTracker, direct uniquement). Le message porte les
+-- champs qui composent le loot_uid du broadcasteur (recipient, bossId,
+-- itemId, at) : le récepteur reconstruit EXACTEMENT le même uid, donc le
+-- serveur déduplique relais et export direct entre eux.
+function Comms:BroadcastLoot(s)
+    if not self:IsEnabled() or not onSupportedRealm() then return end
+    broadcastJittered(table.concat({
+        SCHEMA, "L",
+        tostring(s.itemId), tostring(s.itemQuality or ""),
+        tostring(s.lootedAt),
+        tostring(s.recipient or ""):sub(1, 48),
+        tostring(s.bossId or 0),
+        tostring(s.bossName or ""):sub(1, 48),
+        tostring(s.instanceId or 0),
+        tostring(s.instanceName or ""):sub(1, 48),
+        tostring(s.itemName or ""):sub(1, 48),
+        s.bossKill == true and "1" or (s.bossKill == false and "0" or ""),
+    }, FS))
 end
 
 -- ===================== Réception =====================
@@ -244,15 +304,26 @@ end
 
 local replyTimer = nil
 
+-- Fenêtre de plausibilité commune aux observations relayées : quasi temps
+-- réel, hors [-2 h, +10 min] = rebut.
+local function plausibleAt(raw)
+    local now = (GetServerTime and GetServerTime() or time())
+    local at = tonumber(raw)
+    if not at or at < now - 7200 or at > now + 600 then return nil end
+    return at
+end
+
+local function cleanFaction(raw)
+    local faction = tostring(raw or ""):upper()
+    if faction ~= "HORDE" and faction ~= "ALLIANCE" then return "" end
+    return faction
+end
+
 local function onSighting(fields)
     if not hasLocalUploader() then return end
     if not relayBudgetOk() then return end
-    local now = (GetServerTime and GetServerTime() or time())
-    local at = tonumber(fields[4])
-    -- Une pose relayée est quasi temps réel : hors [-2 h, +10 min] = rebut.
-    if not at or at < now - 7200 or at > now + 600 then return end
-    local faction = tostring(fields[9] or ""):upper()
-    if faction ~= "HORDE" and faction ~= "ALLIANCE" then faction = "" end
+    local at = plausibleAt(fields[4])
+    if not at then return end
     local added = AuberdineWorldbuffLogger and AuberdineWorldbuffLogger.AddRelayed
         and AuberdineWorldbuffLogger.AddRelayed({
             spellId = tonumber(fields[3]),
@@ -261,11 +332,83 @@ local function onSighting(fields)
             character = fields[6],
             realm = fields[7],
             guild = fields[8],
-            faction = faction,
+            faction = cleanFaction(fields[9]),
             zone = fields[10],
         })
     if added then
         debugPrint("pose relayée : " .. tostring(fields[5]) .. " par " .. tostring(fields[6]))
+    end
+end
+
+-- Mort de world boss relayée : l'ANNONCE est pour tout le monde, le stockage
+-- (voie montante) pour les seuls porteurs d'uploader — même règle que les
+-- poses. Le budget anti-flood s'applique avant tout (annonce comprise).
+local function onWorldboss(fields)
+    if not relayBudgetOk() then return end
+    local at = plausibleAt(fields[4])
+    if not at then return end
+    local added = AuberdineWorldbossLogger and AuberdineWorldbossLogger.AddRelayed
+        and AuberdineWorldbossLogger.AddRelayed({
+            npcId = tonumber(fields[3]),
+            at = at,
+            name = fields[5],
+            character = fields[6],
+            realm = fields[7],
+            guild = fields[8],
+            faction = cleanFaction(fields[9]),
+            zone = fields[10],
+        }, hasLocalUploader())
+    if added then
+        debugPrint("world boss relayé : " .. tostring(fields[5]) .. " par " .. tostring(fields[6]))
+    end
+end
+
+-- Boss de raid vaincu, relayé : même partage annonce/stockage que W.
+local function onKill(fields)
+    if not relayBudgetOk() then return end
+    local at = plausibleAt(fields[4])
+    if not at then return end
+    local added = AuberdineKillLogger and AuberdineKillLogger.AddRelayed
+        and AuberdineKillLogger.AddRelayed({
+            encounterId = tonumber(fields[3]),
+            at = at,
+            name = fields[5],
+            character = fields[6],
+            realm = fields[7],
+            guild = fields[8],
+            faction = cleanFaction(fields[9]),
+            instanceId = tonumber(fields[10]),
+        }, hasLocalUploader())
+    if added then
+        debugPrint("kill relayé : " .. tostring(fields[5]) .. " (" .. tostring(fields[8]) .. ")")
+    end
+end
+
+-- Butin épique relayé : stockage seul (pas d'annonce — le butin est déjà
+-- affiché en clair dans le chat du raid, et l'annoncer à toute la guilde
+-- serait du spam les soirs de raid).
+local function onLoot(fields)
+    if not hasLocalUploader() then return end
+    if not relayBudgetOk() then return end
+    local at = plausibleAt(fields[5])
+    if not at then return end
+    local tracker = AuberdineExporter and AuberdineExporter.LootTracker
+    local bossKillRaw = fields[12]
+    local added = tracker and tracker.AddRelayed
+        and tracker.AddRelayed({
+            itemId = tonumber(fields[3]),
+            itemQuality = tonumber(fields[4]),
+            lootedAt = at,
+            recipient = fields[6],
+            bossId = tonumber(fields[7]),
+            bossName = fields[8],
+            instanceId = tonumber(fields[9]),
+            instanceName = fields[10],
+            itemName = fields[11],
+            bossKill = (bossKillRaw == "1" and true) or (bossKillRaw == "0" and false) or nil,
+        })
+    if added then
+        debugPrint("loot relayé : " .. tostring(fields[11]) .. " → " .. tostring(fields[6]))
     end
 end
 
@@ -319,6 +462,12 @@ local function onAddonMessage(prefix, msg, _, sender)
     local kind = fields[2]
     if kind == "S" then
         onSighting(fields)
+    elseif kind == "W" then
+        onWorldboss(fields)
+    elseif kind == "K" then
+        onKill(fields)
+    elseif kind == "L" then
+        onLoot(fields)
     elseif kind == "F" then
         onFeed(fields)
     elseif kind == "R" then
