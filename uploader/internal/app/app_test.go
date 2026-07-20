@@ -21,6 +21,9 @@ type fakeUploader struct {
 
 	worldbuffs upload.WorldbuffsFeed
 	sightings  []upload.WorldbuffSighting
+
+	// meshSightings capture les lots génériques du mesh, par endpoint.
+	meshSightings map[string][]map[string]any
 }
 
 type capturedRun struct {
@@ -68,6 +71,17 @@ func (f *fakeUploader) SendWorldbuffSightings(_ context.Context, sightings []upl
 		return 0, f.err
 	}
 	f.sightings = append(f.sightings, sightings...)
+	return len(sightings), nil
+}
+
+func (f *fakeUploader) SendMeshSightings(_ context.Context, path string, sightings []map[string]any) (int, error) {
+	if f.err != nil {
+		return 0, f.err
+	}
+	if f.meshSightings == nil {
+		f.meshSightings = map[string][]map[string]any{}
+	}
+	f.meshSightings[path] = append(f.meshSightings[path], sightings...)
 	return len(sightings), nil
 }
 

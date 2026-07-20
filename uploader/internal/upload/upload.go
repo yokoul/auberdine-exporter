@@ -61,6 +61,12 @@ type Uploader interface {
 	// jeu (voie montante : addon → uploader → site). Renvoie le nombre de
 	// poses retenues côté serveur (hors doublons).
 	SendWorldbuffSightings(ctx context.Context, sightings []WorldbuffSighting) (int, error)
+	// SendMeshSightings transmet un lot d'observations du mesh addon (world
+	// bosses, boss kills de raid…) vers POST /ingest/<path>/sightings. Les
+	// entrées sont des objets déjà normalisés par l'appelant : les schémas
+	// varient par kind, le serveur valide champ à champ. Renvoie le nombre
+	// d'observations retenues côté serveur (hors doublons).
+	SendMeshSightings(ctx context.Context, path string, sightings []map[string]any) (int, error)
 }
 
 // StatusResponse est la réponse de GET /ingest/status.
@@ -299,6 +305,27 @@ func (c *HTTPClient) SendWorldbuffSightings(ctx context.Context, sightings []Wor
 		return 0, err
 	}
 	body, err := c.do(ctx, http.MethodPost, "/ingest/worldbuffs/sightings", payload)
+	if err != nil {
+		return 0, err
+	}
+	var out sightingsResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return 0, fmt.Errorf("upload: réponse sightings illisible: %w", err)
+	}
+	return out.Stored, nil
+}
+
+// SendMeshSightings poste un lot d'observations du mesh addon
+// (POST /ingest/<path>/sightings). No-op si la liste est vide.
+func (c *HTTPClient) SendMeshSightings(ctx context.Context, path string, sightings []map[string]any) (int, error) {
+	if len(sightings) == 0 {
+		return 0, nil
+	}
+	payload, err := json.Marshal(map[string]any{"sightings": sightings})
+	if err != nil {
+		return 0, err
+	}
+	body, err := c.do(ctx, http.MethodPost, "/ingest/"+path+"/sightings", payload)
 	if err != nil {
 		return 0, err
 	}
