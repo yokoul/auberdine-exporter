@@ -166,10 +166,22 @@ end
 function AuberdineWorldbuffs.AddToTooltip(tt)
   local best = AuberdineWorldbuffs.GetBestFeed()
   local age = best and best.age or nil
-  if not age then return end
 
   tt:AddLine(" ")
   tt:AddLine("|cffffd200World buffs planifiés|r")
+
+  if not age then
+    -- Aucune source en mémoire. Cas courant : l'uploader a (re)posé l'agenda
+    -- sur le disque APRÈS le chargement de l'UI — les SavedVariables ne se
+    -- relisent qu'au login/reload —, ou aucun pair ne l'a encore relayé.
+    -- On le DIT plutôt que de rester muet : sinon rien ne s'affiche et
+    -- l'utilisateur ne sait pas qu'une reconnexion suffirait.
+    tt:AddLine("Agenda pas encore chargé.", 0.85, 0.7, 0.3)
+    tt:AddLine("Reconnecte-toi pour le récupérer, ou attends le", 0.55, 0.55, 0.55, true)
+    tt:AddLine("relais d'un joueur équipé de l'uploader.", 0.55, 0.55, 0.55, true)
+    tt:Show()
+    return
+  end
 
   if age > STALE_SECONDS then
     tt:AddLine("Agenda indisponible (données de plus de 12 h).", 0.55, 0.55, 0.55, true)
