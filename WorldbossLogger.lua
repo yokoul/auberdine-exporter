@@ -194,7 +194,7 @@ local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
-f:RegisterEvent("UPDATE_MOUSEOVER")
+f:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 f:RegisterEvent("NAME_PLATE_UNIT_ADDED")
 f:SetScript("OnEvent", function(_, event, arg1)
   if AuberdineExporter and AuberdineExporter.IsOnAuberdine
@@ -212,7 +212,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     end
   elseif event == "PLAYER_TARGET_CHANGED" then
     checkUnitAlive("target")
-  elseif event == "UPDATE_MOUSEOVER" then
+  elseif event == "UPDATE_MOUSEOVER_UNIT" then
     checkUnitAlive("mouseover")
   elseif event == "NAME_PLATE_UNIT_ADDED" then
     checkUnitAlive(arg1)  -- arg1 = jeton d'unité de la plaque
