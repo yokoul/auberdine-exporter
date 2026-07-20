@@ -42,6 +42,7 @@ local JOIN_DELAY = 12              -- s après PEW avant de joindre le canal
 local ANNOUNCE_DELAY = 25          -- s après PEW : broadcast/REQ de l'agenda
 local STALE_SECONDS = 12 * 3600    -- agenda plus vieux : on ne le relaie plus
 local REQ_IF_OLDER = 2 * 3600      -- agenda généré il y a +2 h → on quémande
+local REQUERY_EVERY = 25 * 60      -- sans agenda frais : on requémande à ce rythme
 local FEED_MAX_ENTRIES = 12        -- entrées max broadcastées / acceptées ×2
 local RELAY_BURST_MAX = 80         -- observations relayées acceptées / fenêtre
 local RELAY_BURST_WINDOW = 600     -- s (fenêtre glissante anti-flood)
@@ -197,6 +198,27 @@ local function requestFeed()
     local have = feed and feed.generatedAt or 0
     broadcast(SCHEMA .. FS .. "R" .. FS .. tostring(have))
     debugPrint("agenda demandé aux pairs (have=" .. have .. ")")
+end
+
+-- Requête UNIQUE au login = angle mort : un pair qui a l'agenda mais se
+-- connecte APRÈS nous ne nous l'enverra jamais (il ne rediffuse qu'à SON
+-- login ou sur requête). Tant qu'on n'a rien de frais à montrer — pas
+-- d'uploader, ou uploader en panne — on requémande donc périodiquement.
+-- Un porteur d'uploader au feed frais ne quémande pas (il OFFRE), et dès
+-- qu'un relais frais arrive, feed.age/generatedAt repassent sous les seuils
+-- et la requête s'éteint d'elle-même — pas de trafic inutile.
+local function scheduleRequery()
+    C_Timer.After(REQUERY_EVERY, function()
+        if Comms:IsEnabled() and onSupportedRealm() then
+            local feed = AuberdineWorldbuffs and AuberdineWorldbuffs.GetBestFeed
+                and AuberdineWorldbuffs.GetBestFeed() or nil
+            if (not feed) or feed.age > STALE_SECONDS
+                or (time() - feed.generatedAt > REQ_IF_OLDER) then
+                requestFeed()
+            end
+        end
+        scheduleRequery()
+    end)
 end
 
 -- ===================== Observations : émission =====================
@@ -528,4 +550,5 @@ f:SetScript("OnEvent", function(_, event, ...)
             requestFeed()
         end
     end)
+    scheduleRequery()
 end)
