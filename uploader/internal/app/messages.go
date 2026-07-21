@@ -199,12 +199,29 @@ func replaceTopLevelBlock(src, varName, value string) (string, error) {
 	if eq < 0 {
 		return "", fmt.Errorf("bloc %s : pas de '='", varName)
 	}
-	open := strings.IndexByte(src[idx+eq:], '{')
-	if open < 0 {
-		return "", fmt.Errorf("bloc %s : pas de '{'", varName)
+	// La valeur commence après le '=' et d'éventuels blancs. On ne cherche PAS
+	// la prochaine '{' du fichier : si notre variable porte une valeur scalaire
+	// (nil, nombre — WoW l'écrit ainsi quand la table a été vidée), la première
+	// '{' rencontrée appartiendrait à la variable SUIVANTE, et le remplacement
+	// l'engloutirait jusqu'à son '}' — destruction silencieuse d'un bloc voisin
+	// (AuberdineUploaderInbox, voire AuberdineExporterDB). La valeur scalaire
+	// s'arrête donc en fin de ligne, et on la remplace telle quelle.
+	valStart := idx + eq + 1
+	for valStart < len(src) && (src[valStart] == ' ' || src[valStart] == '\t') {
+		valStart++
 	}
-	openPos := idx + eq + open
-	closePos, err := matchBrace(src, openPos)
+	if valStart >= len(src) {
+		// Fichier tronqué juste après le '=' : on repart d'une valeur saine.
+		return src[:idx] + assignment + "\n", nil
+	}
+	if src[valStart] != '{' {
+		end := strings.IndexByte(src[valStart:], '\n')
+		if end < 0 {
+			return src[:idx] + assignment + "\n", nil
+		}
+		return src[:idx] + assignment + src[valStart+end:], nil
+	}
+	closePos, err := matchBrace(src, valStart)
 	if err != nil {
 		return "", fmt.Errorf("bloc %s : %w", varName, err)
 	}

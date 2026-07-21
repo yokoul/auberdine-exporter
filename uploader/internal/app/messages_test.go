@@ -125,3 +125,49 @@ func TestEncodeInboxBlock_Empty(t *testing.T) {
 		t.Fatalf("messages devrait être vide, obtenu %d", len(msgs))
 	}
 }
+
+// Une SavedVariable dont la valeur n'est pas une table (WoW écrit `= nil` ou un
+// scalaire quand la table a été vidée) ne doit ni bloquer la réécriture, ni
+// happer le bloc de la variable suivante. Cas observé en production : le feed
+// worldbuffs échouait toutes les 2 min sur un compte (« pas de '{' »), et dans
+// la variante où une autre variable suivait, celle-ci disparaissait purement.
+func TestReplaceTopLevelBlock_ValeurScalaire(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{"nil en fin de fichier", "AuberdineExporterDB = {\n\t[\"p\"] = 1,\n}\nAuberdineWorldbuffsFeed = nil\n"},
+		{"scalaire en fin de fichier", "AuberdineExporterDB = {\n\t[\"p\"] = 1,\n}\nAuberdineWorldbuffsFeed = 1784595670\n"},
+		{"nil suivi d'un autre bloc", "AuberdineWorldbuffsFeed = nil\nAuberdineExporterDB = {\n\t[\"p\"] = 1,\n}\n"},
+		{"tronqué après le =", "AuberdineExporterDB = {\n\t[\"p\"] = 1,\n}\nAuberdineWorldbuffsFeed = "},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := replaceTopLevelBlock(c.src, "AuberdineWorldbuffsFeed", "{\n\tschema = 1,\n}")
+			if err != nil {
+				t.Fatalf("réécriture refusée : %v", err)
+			}
+			parsed, err := luasv.Parse(out)
+			if err != nil {
+				t.Fatalf("résultat illisible : %v\n%s", err, out)
+			}
+			feed, ok := parsed["AuberdineWorldbuffsFeed"].(map[string]any)
+			if !ok {
+				t.Fatalf("feed non réécrit en table :\n%s", out)
+			}
+			if feed["schema"] == nil {
+				t.Fatalf("feed sans schema :\n%s", out)
+			}
+			// L'invariant : le bloc voisin survit intact.
+			if strings.Contains(c.src, "AuberdineExporterDB") {
+				db, ok := parsed["AuberdineExporterDB"].(map[string]any)
+				if !ok {
+					t.Fatalf("AuberdineExporterDB détruit par la réécriture :\n%s", out)
+				}
+				if db["p"] == nil {
+					t.Fatalf("contenu de AuberdineExporterDB perdu :\n%s", out)
+				}
+			}
+		})
+	}
+}
