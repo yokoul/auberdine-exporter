@@ -2557,6 +2557,10 @@ local function OnTradeSkillShow()
         if IsProfessionValid(skillName) then
             print("|cff00ff00AuberdineExporter:|r Scanning " .. skillName .. "...")
             local recipes = {}
+            -- Déplier TOUTES les catégories avant de compter : GetNumTradeSkills
+            -- ne voit que les lignes visibles — un en-tête replié ferait
+            -- silencieusement disparaître ses recettes du scan.
+            if ExpandTradeSkillSubClass then ExpandTradeSkillSubClass(0) end
             local numRecipes = GetNumTradeSkills()
             
             -- Utiliser le nom normalisé pour éviter les doublons
@@ -2691,6 +2695,8 @@ local function OnCraftShow()
         if (skillName == "Enchantement" and GetLocale() == "frFR") or (skillName == "Enchanting" and GetLocale() ~= "frFR") then
             print("|cff00ff00AuberdineExporter:|r Scanning Enchanting...")
             local recipes = {}
+            -- Même garde que côté TradeSkill : déplier avant de compter.
+            if ExpandCraftSkillLine then ExpandCraftSkillLine(0) end
             local numRecipes = GetNumCrafts()
             
             -- Utiliser le nom normalisé pour éviter les doublons
@@ -3152,6 +3158,12 @@ local function HandleSlashCommand(msg)
         else
             print("|cffff0000AuberdineExporter:|r Minimap button not created yet!")
         end
+    elseif command == "absent" then
+        -- Signalement manuel : « je suis sur la zone de guet, le boss n'y est
+        -- pas ». La zone du joueur détermine le(s) boss (WorldbossLogger).
+        if AuberdineWorldbossLogger and AuberdineWorldbossLogger.ReportAbsent then
+            AuberdineWorldbossLogger.ReportAbsent()
+        end
     elseif command == "stats" then
         ShowStatistics()
     elseif command == "scan" then
@@ -3560,6 +3572,7 @@ local function HandleSlashCommand(msg)
         print("  /auberdine autoscan - Toggle auto-scan on/off")
         print("  /auberdine minimap - Toggle minimap button")
         print("  /auberdine wb - World buffs planifiés (agenda AWB)")
+        print("  /auberdine absent - Signaler qu'un world boss est absent de sa zone (guet)")
         print("  /auberdine reset - Reset all data")
         print("  /auberdine clear - Clear memory data (keep current character)")
         print("  /auberdine size - Show data size information")
