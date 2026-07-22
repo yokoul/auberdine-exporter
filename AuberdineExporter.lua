@@ -616,7 +616,27 @@ local function ScanAllProfessions()
         print("|cffff8000Note:|r Pour collecter les recettes, ouvrez vos fenêtres de métiers (touche 'P' puis cliquez sur un métier)")
         return profCount
     else
-        print("|cffff8000AuberdineExporter:|r Aucun métier valide trouvé.")
+        -- Ne pas crier « aucun métier » sans regarder la base : au login, le
+        -- scan peut revenir bredouille alors que les métiers du personnage
+        -- sont déjà connus d'un scan précédent. Les données restent, on
+        -- informe sans alarmer — et on ne prétend « aucun métier » qu'après
+        -- avoir VÉRIFIÉ que la base n'en connaît pas non plus.
+        local knownProfs = AuberdineExporterDB.characters[charKey]
+            and AuberdineExporterDB.characters[charKey].professions
+        local knownNames = {}
+        if knownProfs then
+            for _, p in pairs(knownProfs) do
+                table.insert(knownNames, p.name or p.normalizedName or "?")
+            end
+        end
+        if #knownNames > 0 then
+            table.sort(knownNames)
+            print("|cff00ff00AuberdineExporter:|r Métiers connus : "
+                .. table.concat(knownNames, ", ")
+                .. " |cff888888(ouvrez vos fenêtres de métiers pour rafraîchir)|r")
+        else
+            print("|cffff8000AuberdineExporter:|r Aucun métier connu sur ce personnage.")
+        end
         return 0
     end
 end
@@ -668,7 +688,9 @@ end
 -- Fonction pour récupérer la version depuis le fichier .toc
 local function GetAddonVersion()
     local addonName = "AuberdineExporter"
-    local version = GetAddOnMetadata(addonName, "Version")
+    -- 1.15.9 a déplacé GetAddOnMetadata (global) vers C_AddOns : on lit celui présent.
+    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local version = getMeta and getMeta(addonName, "Version")
     return version or "1.7.4" -- Fallback au cas où la lecture échoue
 end
 
@@ -2336,13 +2358,61 @@ function CreateExportFrame(exportData, format)
         scrollFrame:SetPoint("TOPLEFT", 10, -40)
         scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
 
+        -- Encart de la zone de texte : fond sombre + liseré fin façon tooltip,
+        -- cohérent avec le DialogBorderTemplate du cadre (fini l'aplat gris).
+        -- Englobe le texte ET la gouttière de la barre de défilement.
+        local inset = CreateFrame("Frame", nil, exportFrame, "BackdropTemplate")
+        inset:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", -6, 6)
+        inset:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 26, -6)
+        inset:SetBackdrop({
+            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 12,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        inset:SetBackdropColor(0, 0, 0, 0.55)
+        inset:SetBackdropBorderColor(0.75, 0.61, 0.3, 0.9)
+        inset:EnableMouse(false)
+        inset:SetFrameLevel(math.max(0, scrollFrame:GetFrameLevel() - 1))
+
         local editBox = CreateFrame("EditBox", nil, scrollFrame)
         editBox:SetMultiLine(true)
         editBox:SetFontObject("ChatFontNormal")
+        -- Texte blanc franc + couleur de sélection EXPLICITE. Sur ce client la
+        -- sélection native est de la même teinte que le fond → tout le texte
+        -- auto-sélectionné à l'ouverture (HighlightText) devient invisible.
+        -- Un bleu opaque distinct règle ça : sélection dessinée SOUS le texte,
+        -- donc blanc-sur-bleu, lisible et clairement « sélectionné ».
+        editBox:SetTextColor(1, 1, 1)
+        if editBox.SetHighlightColor then
+            editBox:SetHighlightColor(0.16, 0.38, 0.85, 1)
+        end
+        editBox:SetTextInsets(4, 4, 2, 2)
         editBox:SetWidth(450)
+        editBox:SetAutoFocus(false)
+        editBox:SetHeight(200) -- plancher ; ajusté au contenu à chaque export
         editBox:SetScript("OnEscapePressed", function() exportFrame:Hide() end)
         scrollFrame:SetScrollChild(editBox)
         exportFrame.editBox = editBox
+        exportFrame.scrollFrame = scrollFrame
+
+        -- FontString caché pour mesurer la hauteur du texte : le scroll child
+        -- d'un UIPanelScrollFrameTemplate doit avoir une hauteur explicite,
+        -- sinon (hauteur nulle) rien ne s'affiche — la boîte paraît vide.
+        exportFrame.measure = exportFrame:CreateFontString(nil, "ARTWORK", "ChatFontNormal")
+        exportFrame.measure:SetWidth(450)
+        exportFrame.measure:SetJustifyH("LEFT")
+        exportFrame.measure:Hide()
+
+        -- Note affichée quand l'export est trop volumineux pour être DESSINÉ
+        -- (limite du moteur de rendu sur les FontString géants) : le texte est
+        -- pourtant bien là, et Ctrl+C copie depuis le tampon, pas l'affichage.
+        exportFrame.bigNote = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        exportFrame.bigNote:SetPoint("CENTER", scrollFrame, "CENTER", 0, 0)
+        exportFrame.bigNote:SetWidth(400)
+        exportFrame.bigNote:SetJustifyH("CENTER")
+        exportFrame.bigNote:SetTextColor(0.95, 0.85, 0.55)
+        exportFrame.bigNote:Hide()
 
         -- Close button
         local closeButton = CreateFrame("Button", nil, exportFrame, "UIPanelCloseButton")
@@ -2361,9 +2431,38 @@ function CreateExportFrame(exportData, format)
     local frame = exportFrameInstance
     frame.title:SetText("Export " .. format:upper())
     frame.editBox:SetText(exportData)
+    -- Dimensionne le scroll child sur la hauteur réelle du texte (sinon vide).
+    -- MAIS au-delà d'un certain volume, le moteur ne sait plus dessiner la
+    -- chaîne (l'aperçu reste vide — cas de l'export Auberdine complet, pas du
+    -- CSV) : on ne mesure pas des mégaoctets pour rien, et on affiche une
+    -- note — le texte EST là, Ctrl+C copie depuis le tampon, pas l'affichage.
+    local size = #exportData
+    local TOO_BIG = 60 * 1024
+    local floor = frame.scrollFrame and frame.scrollFrame:GetHeight() or 200
+    if frame.measure and size <= TOO_BIG then
+        frame.measure:SetText(exportData)
+        local h = frame.measure:GetStringHeight() + 24
+        frame.measure:SetText("")
+        frame.editBox:SetHeight(math.max(h, floor))
+        if frame.bigNote then frame.bigNote:Hide() end
+    else
+        frame.editBox:SetHeight(floor)
+        if frame.bigNote then
+            frame.bigNote:SetText(string.format(
+                "Export volumineux (%.0f Ko) — l'aperçu peut rester vide.\nLe texte est bien là et déjà sélectionné : Ctrl+C copie tout.",
+                size / 1024))
+            frame.bigNote:Show()
+        end
+    end
     frame.editBox:SetCursorPosition(0)
     frame:Show()
     frame.editBox:SetFocus()
+    -- Sélection auto : le texte est copiable d'emblée (Ctrl+C direct).
+    -- On (re)force la couleur de surbrillance à CHAQUE ouverture : en bleu
+    -- clair, le rectangle de sélection ne se confond plus avec le fond.
+    if frame.editBox.SetHighlightColor then
+        frame.editBox:SetHighlightColor(0.25, 0.45, 0.90, 1)
+    end
     frame.editBox:HighlightText()
 end
 
@@ -2686,8 +2785,14 @@ frame:RegisterEvent("CRAFT_SHOW")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("QUEST_TURNED_IN")
--- Apprentissage d'une recette (journal) — best-effort, complété par le diff au scan des métiers
-frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
+-- Apprentissage d'une recette (journal) — best-effort, complété par le diff au scan des métiers.
+-- Le patch 1.15.9 a retiré LEARNED_SPELL_IN_TAB au profit de LEARNED_SPELL_IN_SKILL_LINE
+-- (arg1 = spellID dans les deux cas). RegisterEvent LÈVE une erreur sur un event inconnu,
+-- qui avorterait toute l'init en aval (icône minimap comprise) : on protège l'appel et on
+-- enregistre celui que le client connaît — le nouveau d'abord, l'ancien en repli.
+if not pcall(frame.RegisterEvent, frame, "LEARNED_SPELL_IN_SKILL_LINE") then
+    pcall(frame.RegisterEvent, frame, "LEARNED_SPELL_IN_TAB")
+end
 -- Inventaire complet & consommables (v1.5.1)
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_MONEY")
@@ -2884,7 +2989,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 end
             end
         end
-    elseif event == "LEARNED_SPELL_IN_TAB" then
+    elseif event == "LEARNED_SPELL_IN_TAB" or event == "LEARNED_SPELL_IN_SKILL_LINE" then
         -- arg1 = spellID du sort appris. On ne garde que les sorts reconnus comme
         -- recettes par LibRecipes (filtre les sorts de classe). Horodatage précis ;
         -- le diff au scan des métiers sert de filet si l'event est manqué.
