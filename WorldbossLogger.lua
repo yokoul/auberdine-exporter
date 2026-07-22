@@ -181,19 +181,10 @@ local function recordShade(bossId, shadeName)
   end
 end
 
--- Signalement MANUEL d'absence (/auberdine absent) : « j'y suis, il n'y est
--- pas ». Témoignage, pas preuve — le serveur dégrade « vivant » en « non
--- confirmé », il ne fabrique jamais une mort. La zone du joueur détermine
--- le(s) boss concerné(s) ; aux portails du Rêve on signale les quatre drakes,
--- le serveur ne retient que celui qu'il croyait à CET endroit.
-function AuberdineWorldbossLogger.ReportAbsent()
-  local zone = GetRealZoneText() or ""
-  local targets = ABSENT_ZONES[zone]
-  if not targets then
-    print("|cffff8000Auberdine:|r Aucun colosse errant n'est rattaché à « " .. zone
-      .. " » — placez-vous sur sa zone de guet (Azshara, Terres foudroyées, ou un portail du Rêve).")
-    return
-  end
+-- Cœur du signalement d'absence, partagé entre la commande manuelle et la
+-- sentinelle automatique de portail. Témoignage, pas preuve — le serveur
+-- dégrade « vivant » en « non confirmé », il ne fabrique jamais une mort.
+local function emitAbsent(targets)
   local list = sightings()
   local reported = 0
   for _, bossId in ipairs(targets) do
@@ -207,13 +198,88 @@ function AuberdineWorldbossLogger.ReportAbsent()
     end
   end
   prune(list)
-  if reported > 0 then
+  return reported
+end
+
+-- Signalement MANUEL (/auberdine absent) : « j'y suis, il n'y est pas ».
+-- La zone du joueur détermine le(s) boss concerné(s) ; aux portails du Rêve
+-- on signale les quatre drakes, le serveur ne retient que celui qu'il
+-- croyait à CET endroit.
+function AuberdineWorldbossLogger.ReportAbsent()
+  local zone = GetRealZoneText() or ""
+  local targets = ABSENT_ZONES[zone]
+  if not targets then
+    print("|cffff8000Auberdine:|r Aucun colosse errant n'est rattaché à « " .. zone
+      .. " » — placez-vous sur sa zone de guet (Azshara, Terres foudroyées, ou un portail du Rêve).")
+    return
+  end
+  if emitAbsent(targets) > 0 then
     print("|cff00ff00Auberdine:|r Absence signalée pour " .. zone
       .. " — le guet en tiendra compte. Merci du passage !")
   else
     print("|cffff8000Auberdine:|r Absence déjà signalée il y a peu — rien à ajouter.")
   end
 end
+
+-- ===== Sentinelle de portail : absence AUTOMATIQUE =====
+-- Les drakes et Kazzak vivent dans une SOUS-ZONE dédiée et exiguë (bosquets
+-- des portails du Rêve, Balafre corrompue) : y séjourner SENTINEL_DWELL
+-- secondes sans détecter le boss vaut témoignage d'absence, sans commande à
+-- taper. Azuregos, lui, patrouille sur la moitié d'Azshara → il reste au
+-- signalement manuel (et à son esprit). Le coût d'un faux négatif de
+-- détection est borné par la doctrine serveur : un 'absent' ne fait que
+-- dégrader en « non confirmé », jamais décréter une mort.
+local SENTINEL_DWELL = 60 -- s de séjour continu dans la sous-zone
+
+-- Sous-zones de guet (lowercase, FR + EN). « L'Ombrage » est attesté par nos
+-- propres observations ; les autres libellés FR sont à confirmer en jeu — un
+-- libellé faux est SANS DANGER (la sentinelle ne s'arme simplement pas).
+local PORTAL_SUBZONES = {
+  ["l'ombrage"] = DRAKES,            ["bough shadow"] = DRAKES,   -- Orneval
+  ["bosquet du crépuscule"] = DRAKES, ["twilight grove"] = DRAKES, -- Bois de la Pénombre
+  ["rameau du rêve"] = DRAKES,        ["le rameau du rêve"] = DRAKES,
+  ["dream bough"] = DRAKES,                                        -- Feralas
+  ["seradane"] = DRAKES,                                           -- Hinterlands
+  ["la balafre corrompue"] = { 12397 }, ["balafre corrompue"] = { 12397 },
+  ["the tainted scar"] = { 12397 },                                -- Kazzak
+}
+
+-- Dernière détection VIVANTE par boss (posée par recordAlive) : si le boss a
+-- été vu pendant le séjour, il n'y a évidemment pas d'absence à signaler.
+local lastLiveDetect = {}
+
+local sentinelToken = 0     -- invalide le minuteur en cours à chaque changement
+local sentinelEnteredAt = nil
+local sentinelSub = nil
+
+local function sentinelCheck()
+  local sub = (((GetSubZoneText and GetSubZoneText()) or ""):lower())
+  local targets = PORTAL_SUBZONES[sub]
+  if not targets then
+    sentinelSub, sentinelEnteredAt = nil, nil
+    sentinelToken = sentinelToken + 1
+    return
+  end
+  if sentinelSub == sub then return end -- déjà armée pour ce séjour
+  sentinelSub = sub
+  sentinelEnteredAt = GetTime()
+  sentinelToken = sentinelToken + 1
+  local token = sentinelToken
+  C_Timer.After(SENTINEL_DWELL, function()
+    if token ~= sentinelToken then return end -- sous-zone quittée entre-temps
+    -- Un fantôme ne voit pas les vivants : son « rien vu » ne vaut rien.
+    if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return end
+    local enteredAt = sentinelEnteredAt
+    if not enteredAt then return end
+    for _, bossId in ipairs(targets) do
+      if (lastLiveDetect[bossId] or 0) >= enteredAt then return end -- vu vivant ici
+    end
+    if emitAbsent(targets) > 0 then
+      print("|cff00ff00Auberdine:|r Guet du portail : nul colosse en vue — absence signalée.")
+    end
+  end)
+end
+AuberdineWorldbossLogger.SentinelCheck = sentinelCheck
 
 -- Observation reçue d'un pair via le mesh (Comms.lua). L'annonce est un print
 -- local pour tous ; le STOCKAGE (voie montante) est réservé aux porteurs
@@ -297,6 +363,7 @@ local function checkUnitAlive(unit)
     return
   end
   if WORLD_BOSSES[npcId] then
+    lastLiveDetect[npcId] = GetTime() -- désarme la sentinelle de portail
     recordAlive(npcId, UnitName(unit))
   elseif SHADES[npcId] then
     recordShade(SHADES[npcId], UnitName(unit))
@@ -309,6 +376,10 @@ f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
 f:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 f:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+-- Sentinelle de portail : suit les changements de sous-zone.
+f:RegisterEvent("ZONE_CHANGED")
+f:RegisterEvent("ZONE_CHANGED_INDOORS")
+f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 f:SetScript("OnEvent", function(_, event, arg1)
   if AuberdineExporter and AuberdineExporter.IsOnAuberdine
       and not AuberdineExporter:IsOnAuberdine() then
@@ -316,6 +387,10 @@ f:SetScript("OnEvent", function(_, event, arg1)
   end
   if event == "PLAYER_ENTERING_WORLD" then
     prune(sightings())
+    sentinelCheck()
+  elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
+      or event == "ZONE_CHANGED_NEW_AREA" then
+    sentinelCheck()
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
     local _, subevent, _, _, _, _, _, destGUID, destName = CombatLogGetCurrentEventInfo()
     if subevent ~= "UNIT_DIED" then return end
