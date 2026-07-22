@@ -265,14 +265,37 @@ local function npcIdFromGuid(guid)
   return tonumber(npcId)
 end
 
--- Une unité EST-elle un world boss VIVANT — ou son ESPRIT ? (un cadavre
--- ciblable ne compte pas comme présence — ceinture et bretelles avec le
--- plancher de respawn serveur.)
+-- DÉPOUILLE croisée : le cadavre d'un world boss ne persiste que quelques
+-- minutes — le voir vaut mort à l'instant près, même sans avoir assisté au
+-- combat (groupe tueur sans addon, CLEU hors de portée). Voyage en 'death'
+-- sur le kind W existant : une dépouille EST une mort, tous les clients la
+-- comprennent, le serveur n'a rien à apprendre.
+local function recordCorpse(npcId, unitName)
+  local list = sightings()
+  local entry = makeEntry(npcId, unitName, "death")
+  if alreadyLogged(list, npcId, entry.at, entry.character, "death") then return end
+  list[#list + 1] = entry
+  prune(list)
+  announceKill(npcId, entry.name, entry.at)
+  if AuberdineComms and AuberdineComms.BroadcastWorldboss then
+    AuberdineComms:BroadcastWorldboss(entry)
+  end
+end
+
+-- Une unité EST-elle un world boss — VIVANT, MORT, ou son ESPRIT ?
+--   vivant → présence ; mort (dépouille encore ciblable) → mort datée ;
+--   esprit → constat de mort passée. Le plancher de respawn serveur reste la
+--   ceinture de sécurité contre une dépouille confondue avec une présence.
 local function checkUnitAlive(unit)
   if not unit or not UnitExists(unit) then return end
-  if UnitIsDead(unit) then return end
   local npcId = npcIdFromGuid(UnitGUID(unit))
   if not npcId then return end
+  if UnitIsDead(unit) then
+    if WORLD_BOSSES[npcId] then
+      recordCorpse(npcId, UnitName(unit))
+    end
+    return
+  end
   if WORLD_BOSSES[npcId] then
     recordAlive(npcId, UnitName(unit))
   elseif SHADES[npcId] then
