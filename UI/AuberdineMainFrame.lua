@@ -1,6 +1,9 @@
 -- Main UI for AuberdineExporter
 AuberdineExporterUI = {}
 
+-- 1.15.9 a déplacé GetAddOnMetadata (global) vers C_AddOns : on lit celui présent.
+local GetAddOnMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+
 function AuberdineExporterUI:Initialize()
     self.mainFrame = nil
     self.isInitialized = true
@@ -692,21 +695,83 @@ function AuberdineExporterUI:ToggleMainFrame()
 end
 
 function AuberdineExporterUI:CreateSettingsTab(parent)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetAllPoints()
-    
+    -- Vue scrollable : le contenu des réglages dépasse la hauteur du cadre
+    -- (guilde, census, comms, boutons du bas). On empile tout dans un scroll
+    -- child et on laisse la molette faire défiler, au lieu de déborder.
+    local outer = CreateFrame("Frame", nil, parent)
+    outer:SetAllPoints()
+
+    local scrollFrame = CreateFrame("ScrollFrame", nil, outer, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 4, -4)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -28, 4) -- marge droite pour la barre
+
+    -- Tout le corps ci-dessous s'attache à `frame` = le contenu défilant.
+    local frame = CreateFrame("Frame", nil, scrollFrame)
+    frame:SetSize(1, 1)
+    scrollFrame:SetScrollChild(frame)
+    -- La largeur du contenu suit celle du cadre visible (widgets ancrés à
+    -- gauche en coordonnées absolues) ; la hauteur est fixée en fin de fonction.
+    scrollFrame:SetScript("OnSizeChanged", function(_, w) frame:SetWidth(w) end)
+    frame:SetWidth(scrollFrame:GetWidth() > 0 and scrollFrame:GetWidth() or 460)
+
     local settings = AuberdineExporterDB and AuberdineExporterDB.settings or {
         autoScan = true,
         minimapButtonHidden = false
     }
     local yOffset = -10
-    
+
+    -- ── Aides de mise en page : chaque rubrique est un BLOC (fond discret +
+    -- filet coloré + titre + note explicative). Le fond ne connaît sa hauteur
+    -- qu'une fois la section remplie : on mémorise son haut à l'ouverture et on
+    -- le referme (closeSection) à la section suivante et en fin de panneau.
+    local PAD_L = 14
+    local _secBG, _secTop
+    local function closeSection()
+        if _secBG and _secTop then
+            local h = _secTop - yOffset + 6
+            _secBG:SetHeight(h > 1 and h or 1)
+        end
+        _secBG, _secTop = nil, nil
+    end
+    local function beginSection(text, r, g, b, desc)
+        closeSection()
+        yOffset = yOffset - 8
+        _secTop = yOffset + 4
+        local bg = frame:CreateTexture(nil, "BACKGROUND")
+        bg:SetColorTexture(1, 1, 1, 0.025)
+        bg:SetPoint("TOPLEFT", 6, _secTop)
+        bg:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -6, _secTop)
+        _secBG = bg
+        local t = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        t:SetPoint("TOPLEFT", PAD_L, yOffset)
+        t:SetText(text)
+        t:SetTextColor(r, g, b)
+        local rule = frame:CreateTexture(nil, "ARTWORK")
+        rule:SetColorTexture(r, g, b, 0.45)
+        rule:SetHeight(1)
+        rule:SetPoint("TOPLEFT", PAD_L, yOffset - 20)
+        rule:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, yOffset - 20)
+        yOffset = yOffset - 28
+        if desc then
+            local d = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            d:SetPoint("TOPLEFT", PAD_L, yOffset)
+            d:SetWidth(432)
+            d:SetJustifyH("LEFT")
+            d:SetTextColor(0.68, 0.68, 0.68)
+            d:SetText(desc)
+            yOffset = yOffset - (d:GetStringHeight() + 12)
+        end
+    end
+
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 10, yOffset)
     title:SetText("Réglages")
     title:SetTextColor(1, 1, 0)
-    yOffset = yOffset - 40
-    
+    yOffset = yOffset - 34
+
+    beginSection("Général", 1, 0.85, 0.3,
+        "Comportement de base de l'addon et affichage du bouton sur la minimap.")
+
     -- Auto-scan setting
     local autoScanCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     autoScanCheck:SetPoint("TOPLEFT", 10, yOffset)
@@ -741,11 +806,8 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     local GT = AuberdineExporter and AuberdineExporter.GuildTracker
     local gsettings = GT and GT:GetSettings() or { enabled = true, exportPublicNotes = true, trackNoteChanges = true }
 
-    local guildTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    guildTitle:SetPoint("TOPLEFT", 10, yOffset)
-    guildTitle:SetText("Suivi de guilde")
-    guildTitle:SetTextColor(1, 0.82, 0)
-    yOffset = yOffset - 30
+    beginSection("Suivi de guilde", 1, 0.82, 0,
+        "Tient un journal des mouvements de guilde (arrivées, départs, promotions, notes) et l'exporte vers Auberdine. Choisissez ce qui est partagé et pour quelles guildes.")
 
     -- Activer le suivi
     local guildEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
@@ -860,18 +922,8 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     local Census = AuberdineExporter and AuberdineExporter.Census
     local csettings = Census and Census:GetSettings() or { enabled = false }
 
-    local censusTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    censusTitle:SetPoint("TOPLEFT", 10, yOffset)
-    censusTitle:SetText("Recensement du royaume")
-    censusTitle:SetTextColor(0.4, 0.8, 1)
-    yOffset = yOffset - 26
-
-    local censusHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    censusHint:SetPoint("TOPLEFT", 12, yOffset)
-    censusHint:SetWidth(440)
-    censusHint:SetJustifyH("LEFT")
-    censusHint:SetText("Facultatif : aidez à recenser la population. Capte passivement les joueurs croisés (plaques de nom, cible, groupe) — alliés et adversaires. Aucun /who automatique.")
-    yOffset = yOffset - 34
+    beginSection("Recensement du royaume", 0.4, 0.8, 1,
+        "Facultatif : aide à recenser la population. Capte passivement les joueurs croisés (plaques de nom, cible, groupe) — alliés comme adversaires. Aucun /who automatique.")
 
     local censusEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     censusEnableCheck:SetPoint("TOPLEFT", 10, yOffset)
@@ -895,18 +947,8 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
     local Comms = AuberdineComms
     local commsSettings = Comms and Comms:GetSettings() or { enabled = true }
 
-    local commsTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    commsTitle:SetPoint("TOPLEFT", 10, yOffset)
-    commsTitle:SetText("World buffs — partage entre joueurs")
-    commsTitle:SetTextColor(1, 0.82, 0)
-    yOffset = yOffset - 26
-
-    local commsHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    commsHint:SetPoint("TOPLEFT", 12, yOffset)
-    commsHint:SetWidth(440)
-    commsHint:SetJustifyH("LEFT")
-    commsHint:SetText("Relaie l'agenda des poses et les poses observées entre utilisateurs de l'addon (guilde + canal « auberdine », masqué du chat). Sans client AuberdineUploader, vous recevez quand même l'agenda ; vos observations remontent à Auberdine via les autres joueurs.")
-    yOffset = yOffset - 56
+    beginSection("World buffs — partage entre joueurs", 1, 0.82, 0,
+        "Relaie l'agenda des poses et les poses observées entre utilisateurs de l'addon (guilde + canal « auberdine », masqué du chat). Sans client AuberdineUploader, vous recevez quand même l'agenda ; vos observations remontent à Auberdine via les autres joueurs.")
 
     local commsEnableCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     commsEnableCheck:SetPoint("TOPLEFT", 10, yOffset)
@@ -916,7 +958,10 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
         if not Comms then return end
         if self:GetChecked() then Comms:Enable() else Comms:Disable() end
     end)
-    yOffset = yOffset - 40
+    yOffset = yOffset - 24
+
+    beginSection("Maintenance", 0.85, 0.5, 0.5,
+        "Réinitialiser les réglages, purger les données stockées, inspecter leur taille ou recentrer le bouton minimap.")
 
     -- Reset button
     local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -969,8 +1014,14 @@ function AuberdineExporterUI:CreateSettingsTab(parent)
             print("|cff00ff00AuberdineExporter:|r Position du bouton minimap réinitialisée.")
         end
     end)
-    
-    return frame
+
+    -- Referme le fond de la dernière section, puis fixe la hauteur du contenu :
+    -- étendue atteinte par le dernier widget + marge bas. Sans cela le scroll
+    -- child garde une hauteur de 1 et rien ne défile.
+    closeSection()
+    frame:SetHeight(-yOffset + 45)
+
+    return outer
 end
 
 -- Récupère l'EditBox d'un StaticPopup de façon robuste.
