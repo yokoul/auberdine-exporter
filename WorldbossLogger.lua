@@ -19,6 +19,8 @@
 
 local DEATH_DEDUP = 3600       -- s : même mort revue dans la fenêtre = même pose
 local ALIVE_DEDUP = 600        -- s : même boss revu vivant = même observation
+local SHADE_DEDUP = 6 * 3600   -- s : même esprit recroisé = même constat de mort
+local ABSENT_DEDUP = 1800      -- s : anti double-signalement manuel d'absence
 local MAX_ENTRIES = 80         -- plafond dur (morts + présences + relais)
 local MAX_AGE = 30 * 24 * 3600 -- purge des observations de plus de 30 jours
 
@@ -31,6 +33,33 @@ local WORLD_BOSSES = {
   [14888] = "Léthon",
   [14889] = "Émeriss",
   [14890] = "Taerar",
+}
+
+-- PNJ fantômes : n'apparaissent qu'APRÈS la mort du boss et persistent
+-- ~toute la fenêtre de respawn. En croiser un est une PREUVE de mort passée
+-- (kind='shade'), même sans avoir vu le combat — pas une contradiction d'un
+-- boss revu debout depuis (respawn précoce/reset : les deux coexistent, le
+-- serveur fait primer la présence directe). npc_id esprit → npc_id boss.
+local SHADES = {
+  [15481] = 6109, -- Esprit d'Azuregos (GUID relevé en jeu, Azshara)
+}
+
+-- Zones de guet pour le signalement manuel d'absence (/auberdine absent) :
+-- libellés FR et EN (GetRealZoneText est localisé). Les quatre portails du
+-- Rêve partagent la même liste — on signale l'absence des QUATRE drakes à
+-- cet endroit, le serveur ne retient que celui qu'il croyait là.
+local DRAKES = { 14887, 14888, 14889, 14890 }
+local ABSENT_ZONES = {
+  ["Azshara"]            = { 6109 },
+  ["Terres foudroyées"]  = { 12397 },
+  ["Blasted Lands"]      = { 12397 },
+  ["Bois de la Pénombre"] = DRAKES,
+  ["Duskwood"]           = DRAKES,
+  ["Orneval"]            = DRAKES,
+  ["Ashenvale"]          = DRAKES,
+  ["Feralas"]            = DRAKES,
+  ["Hinterlands"]        = DRAKES,
+  ["The Hinterlands"]    = DRAKES,
 }
 
 AuberdineWorldbossLogger = AuberdineWorldbossLogger or {}
@@ -60,8 +89,11 @@ end
 
 -- Dédup par (npcId, kind, personnage) dans la fenêtre propre au kind : une
 -- présence et une mort ne se dédupliquent JAMAIS entre elles.
+local DEDUP_WINDOWS = {
+  alive = ALIVE_DEDUP, death = DEATH_DEDUP, shade = SHADE_DEDUP, absent = ABSENT_DEDUP,
+}
 local function alreadyLogged(list, npcId, at, character, kind)
-  local window = (kind == "alive") and ALIVE_DEDUP or DEATH_DEDUP
+  local window = DEDUP_WINDOWS[kind] or DEATH_DEDUP
   for _, s in ipairs(list) do
     if s.npcId == npcId and (s.kind or "death") == kind
         and math.abs((tonumber(s.at) or 0) - at) < window
@@ -132,6 +164,57 @@ local function recordAlive(npcId, unitName)
   end
 end
 
+-- ESPRIT croisé (preuve de mort passée). L'entrée porte le npc_id du BOSS,
+-- pas de l'esprit : le serveur raisonne par boss. Diffusée sur le kind Comms
+-- « B » (à part) : les clients ≤ 1.7.10 coerceraient un kind W inconnu en
+-- fausse « mort vue » — sur B, ils ignorent le message entier.
+local function recordShade(bossId, shadeName)
+  local list = sightings()
+  local entry = makeEntry(bossId, shadeName or WORLD_BOSSES[bossId], "shade")
+  if alreadyLogged(list, bossId, entry.at, entry.character, "shade") then return end
+  list[#list + 1] = entry
+  prune(list)
+  print("|cff00ff00Auberdine:|r L'esprit de |cffff8000" .. (WORLD_BOSSES[bossId] or "?")
+    .. "|r hante les lieux — sa mort est constatée (signalé)")
+  if AuberdineComms and AuberdineComms.BroadcastBossExtra then
+    AuberdineComms:BroadcastBossExtra(entry)
+  end
+end
+
+-- Signalement MANUEL d'absence (/auberdine absent) : « j'y suis, il n'y est
+-- pas ». Témoignage, pas preuve — le serveur dégrade « vivant » en « non
+-- confirmé », il ne fabrique jamais une mort. La zone du joueur détermine
+-- le(s) boss concerné(s) ; aux portails du Rêve on signale les quatre drakes,
+-- le serveur ne retient que celui qu'il croyait à CET endroit.
+function AuberdineWorldbossLogger.ReportAbsent()
+  local zone = GetRealZoneText() or ""
+  local targets = ABSENT_ZONES[zone]
+  if not targets then
+    print("|cffff8000Auberdine:|r Aucun colosse errant n'est rattaché à « " .. zone
+      .. " » — placez-vous sur sa zone de guet (Azshara, Terres foudroyées, ou un portail du Rêve).")
+    return
+  end
+  local list = sightings()
+  local reported = 0
+  for _, bossId in ipairs(targets) do
+    local entry = makeEntry(bossId, WORLD_BOSSES[bossId], "absent")
+    if not alreadyLogged(list, bossId, entry.at, entry.character, "absent") then
+      list[#list + 1] = entry
+      reported = reported + 1
+      if AuberdineComms and AuberdineComms.BroadcastBossExtra then
+        AuberdineComms:BroadcastBossExtra(entry)
+      end
+    end
+  end
+  prune(list)
+  if reported > 0 then
+    print("|cff00ff00Auberdine:|r Absence signalée pour " .. zone
+      .. " — le guet en tiendra compte. Merci du passage !")
+  else
+    print("|cffff8000Auberdine:|r Absence déjà signalée il y a peu — rien à ajouter.")
+  end
+end
+
 -- Observation reçue d'un pair via le mesh (Comms.lua). L'annonce est un print
 -- local pour tous ; le STOCKAGE (voie montante) est réservé aux porteurs
 -- d'uploader (décidé par l'appelant, comme les poses de world buffs).
@@ -141,7 +224,10 @@ function AuberdineWorldbossLogger.AddRelayed(s, storeIt)
   local at = tonumber(s.at)
   local character = type(s.character) == "string" and s.character or ""
   local realm = type(s.realm) == "string" and s.realm or ""
-  local kind = (s.kind == "alive") and "alive" or "death"
+  -- Kinds admis en relais. Un kind inconnu redevient 'death' UNIQUEMENT sur
+  -- le canal W historique (rétrocompat) ; shade/absent n'arrivent que par le
+  -- kind Comms « B », déjà filtré côté réception.
+  local kind = DEDUP_WINDOWS[s.kind] and s.kind or "death"
   if not npcId or not WORLD_BOSSES[npcId] or not at or character == "" or realm == "" then
     return false
   end
@@ -179,14 +265,18 @@ local function npcIdFromGuid(guid)
   return tonumber(npcId)
 end
 
--- Une unité EST-elle un world boss VIVANT ? (un cadavre ciblable ne compte pas
--- comme présence — ceinture et bretelles avec le plancher de respawn serveur.)
+-- Une unité EST-elle un world boss VIVANT — ou son ESPRIT ? (un cadavre
+-- ciblable ne compte pas comme présence — ceinture et bretelles avec le
+-- plancher de respawn serveur.)
 local function checkUnitAlive(unit)
   if not unit or not UnitExists(unit) then return end
   if UnitIsDead(unit) then return end
   local npcId = npcIdFromGuid(UnitGUID(unit))
-  if npcId and WORLD_BOSSES[npcId] then
+  if not npcId then return end
+  if WORLD_BOSSES[npcId] then
     recordAlive(npcId, UnitName(unit))
+  elseif SHADES[npcId] then
+    recordShade(SHADES[npcId], UnitName(unit))
   end
 end
 

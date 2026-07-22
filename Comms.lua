@@ -266,6 +266,26 @@ function Comms:BroadcastWorldboss(s)
     }, FS))
 end
 
+-- Observation worldboss ÉTENDUE — esprit croisé (shade) ou absence signalée
+-- (absent). Kind « B » À PART, même layout que W : les clients ≤ 1.7.10
+-- coercent tout kind W inconnu en 'death' (fausse mort relayée) — sur un
+-- kind de message inconnu, ils ignorent la trame entière. C'est le but.
+function Comms:BroadcastBossExtra(s)
+    if not self:IsEnabled() or not onSupportedRealm() then return end
+    broadcastJittered(table.concat({
+        SCHEMA, "B",
+        tostring(s.npcId), tostring(s.at),
+        tostring(s.name or ""):sub(1, 48),
+        tostring(s.character or ""):sub(1, 48),
+        tostring(s.realm or ""):sub(1, 48),
+        tostring(s.guild or ""):sub(1, 48),
+        tostring(s.faction or ""),
+        tostring(s.zone or ""):sub(1, 48),
+        tostring(s.kind or ""),
+        tostring(s.subzone or ""):sub(1, 48),
+    }, FS))
+end
+
 -- Boss de raid vaincu (KillLogger.record, directe uniquement).
 function Comms:BroadcastKill(s)
     if not self:IsEnabled() or not onSupportedRealm() then return end
@@ -393,6 +413,34 @@ local function onWorldboss(fields)
     end
 end
 
+-- Observation worldboss étendue relayée (kind B) : shade / absent SEULEMENT
+-- — tout le reste est rejeté (un death/alive légitime voyage sur W).
+-- Silencieux chez le receveur (pas d'annonce), stockage réservé aux porteurs
+-- d'uploader, comme les autres kinds.
+local function onBossExtra(fields)
+    if not relayBudgetOk() then return end
+    local at = plausibleAt(fields[4])
+    if not at then return end
+    local kind = fields[11]
+    if kind ~= "shade" and kind ~= "absent" then return end
+    local added = AuberdineWorldbossLogger and AuberdineWorldbossLogger.AddRelayed
+        and AuberdineWorldbossLogger.AddRelayed({
+            npcId = tonumber(fields[3]),
+            at = at,
+            name = fields[5],
+            character = fields[6],
+            realm = fields[7],
+            guild = fields[8],
+            faction = cleanFaction(fields[9]),
+            zone = fields[10],
+            kind = kind,
+            subzone = fields[12],
+        }, hasLocalUploader())
+    if added then
+        debugPrint("worldboss extra relayé (" .. kind .. ") par " .. tostring(fields[6]))
+    end
+end
+
 -- Boss de raid vaincu, relayé : même partage annonce/stockage que W.
 local function onKill(fields)
     if not relayBudgetOk() then return end
@@ -494,6 +542,8 @@ local function onAddonMessage(prefix, msg, _, sender)
         onSighting(fields)
     elseif kind == "W" then
         onWorldboss(fields)
+    elseif kind == "B" then
+        onBossExtra(fields)
     elseif kind == "K" then
         onKill(fields)
     elseif kind == "L" then
